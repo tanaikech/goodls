@@ -59,6 +59,28 @@ $ goodls -u [URL of shared file on Google Drive]
     - In the case of except for Google Docs
         - ``https://drive.google.com/file/d/#####/view?usp=sharing``
 
+
+## File with URLs
+If you have a file including URLs, you can input the URL data using standard input and pipe as follows. If wrong URL is included, the URL is skipped.
+
+~~~bash
+$ cat sample.txt | goodls
+~~~
+
+or
+
+~~~bash
+$ goodls < sample.txt
+~~~
+
+**sample.txt**
+
+~~~
+https://docs.google.com/spreadsheets/d/#####/edit?usp=sharing
+https://docs.google.com/document/d/#####/edit?usp=sharing
+https://docs.google.com/presentation/d/#####/edit?usp=sharing
+~~~
+
 **When you download shared files from Google Drive, please confirm whether the files are shared.**
 
 # Q&A
@@ -83,6 +105,10 @@ If you have any questions and commissions for me, feel free to tell me.
 * v1.0.0 (January 10, 2018)
 
     1. Initial release.
+
+* v1.0.1 (January 11, 2018)
+
+    1. In order to download several files, a datafile including URLs using Standard Input and Pipe have gotten to be able to be inputted.
 
 
 [TOP](#TOP)

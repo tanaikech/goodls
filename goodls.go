@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -13,6 +14,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
+
+	"golang.org/x/crypto/ssh/terminal"
 
 	"github.com/urfave/cli"
 )
@@ -170,24 +174,50 @@ func (p *para) download(url string) error {
 
 // handler : Initialize of "para".
 func handler(c *cli.Context) {
-	if c.String("url") == "" {
-		createHelp().Run(os.Args)
-		return
-	}
 	var err error
 	workdir, err := filepath.Abs(".")
 	if err != nil {
 		log.Fatal(err)
 	}
 	p := &para{
-		Ext:      c.String("extension"),
-		Filename: c.String("filename"),
-		WorkDir:  workdir,
+		Ext:     c.String("extension"),
+		WorkDir: workdir,
 	}
-	err = p.download(c.String("url"))
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+	if terminal.IsTerminal(int(syscall.Stdin)) {
+		if c.String("url") == "" {
+			createHelp().Run(os.Args)
+			return
+		}
+		p.Filename = c.String("filename")
+		err = p.download(c.String("url"))
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		var urls []string
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			if scanner.Text() == "end" {
+				break
+			}
+			urls = append(urls, scanner.Text())
+		}
+		if scanner.Err() != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", scanner.Err())
+			os.Exit(1)
+		}
+		if len(urls) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: No URL data. Please check help.\n\n $ %s --help\n\n", appname)
+			os.Exit(1)
+		}
+		for _, url := range urls {
+			err = p.download(url)
+			if err != nil {
+				fmt.Printf("## Skipped: Error: %v", err)
+			}
+			p.Filename = ""
+		}
 	}
 	return
 }
@@ -199,7 +229,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.0.0"
+	a.Version = "1.0.1"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
