@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -48,13 +48,23 @@ func (p *para) saveFile(res *http.Response) error {
 	if err = p.getFilename(res); err != nil {
 		return err
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	file, err := os.Create(filepath.Join(p.WorkDir, p.Filename))
 	if err != nil {
 		return err
 	}
-	ioutil.WriteFile(filepath.Join(p.WorkDir, p.Filename), body, 0777)
-	fmt.Printf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}\n", p.Filename, p.Kind, p.ContentType, len(body))
-	defer res.Body.Close()
+	_, err = io.Copy(file, res.Body)
+	if err != nil {
+		return err
+	}
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}\n", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
+	defer func() {
+		file.Close()
+		res.Body.Close()
+	}()
 	return nil
 }
 
@@ -229,7 +239,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.0.1"
+	a.Version = "1.0.2"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",

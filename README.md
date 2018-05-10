@@ -110,5 +110,10 @@ If you have any questions and commissions for me, feel free to tell me.
 
     1. In order to download several files, a datafile including URLs using Standard Input and Pipe have gotten to be able to be inputted.
 
+* v1.0.2 (May 10, 2018)
+
+    1. Files with large size has gotten to be able to be used.
+        - In order to download files with large size (several gigabytes), files are saved by chunks.
+
 
 [TOP](#TOP)
