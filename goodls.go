@@ -1,4 +1,3 @@
-// Package main (goodls.go) :
 package main
 
 import (
@@ -27,6 +26,12 @@ const (
 	docutl  = "https://docs.google.com/"
 )
 
+// chunks : For io.Reader
+type chunks struct {
+	io.Reader
+	cChunk int64
+}
+
 // para : Structure for each parameter
 type para struct {
 	Client      *http.Client
@@ -34,10 +39,21 @@ type para struct {
 	ContentType string
 	Ext         string
 	Filename    string
-	Id          string
+	ID          string
 	Kind        string
-	Url         string
+	URL         string
 	WorkDir     string
+	Disp        bool
+}
+
+// Read : For io.Reader
+func (c *chunks) Read(dat []byte) (int, error) {
+	n, err := c.Reader.Read(dat)
+	c.cChunk += int64(n)
+	if err == nil {
+		fmt.Printf("\rDownloading (bytes)... %d", c.cChunk)
+	}
+	return n, err
 }
 
 // saveFile : Save retrieved data as a file.
@@ -52,13 +68,20 @@ func (p *para) saveFile(res *http.Response) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(file, res.Body)
+	if p.Disp {
+		_, err = io.Copy(file, res.Body)
+	} else {
+		_, err = io.Copy(file, &chunks{Reader: res.Body})
+	}
 	if err != nil {
 		return err
 	}
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return err
+	}
+	if !p.Disp {
+		fmt.Printf("\n")
 	}
 	fmt.Printf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}\n", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
 	defer func() {
@@ -79,7 +102,7 @@ func (p *para) getFilename(s *http.Response) error {
 			p.Filename = para["filename"]
 		}
 	} else {
-		return errors.New(fmt.Sprintf("File ID [ %s ] is not shared, while the file is existing.\n", p.Id))
+		return fmt.Errorf("file ID [ %s ] is not shared, while the file is existing", p.ID)
 	}
 	return nil
 }
@@ -87,12 +110,12 @@ func (p *para) getFilename(s *http.Response) error {
 // downloadLargeFile : When a large size of file is downloaded, this method is used.
 func (p *para) downloadLargeFile() error {
 	fmt.Println("Now downloading.")
-	res, err := p.fetch(p.Url + "&confirm=" + p.Code)
+	res, err := p.fetch(p.URL + "&confirm=" + p.Code)
 	if err != nil {
 		return err
 	}
 	if res.StatusCode != 200 && p.Kind != "file" {
-		return errors.New(fmt.Sprintf("Error: This error occurs when it downloads a large file of Google Docs.\nMessage: %+v", res))
+		return fmt.Errorf("error: This error occurs when it downloads a large file of Google Docs.\nMessage: %+v", res)
 	}
 	p.saveFile(res)
 	return nil
@@ -125,24 +148,24 @@ func (p *para) fetch(url string) (*http.Response, error) {
 	return res, nil
 }
 
-// checkUrl : Parse inputted URL.
-func (p *para) checkUrl(s string) error {
+// checkURL : Parse inputted URL.
+func (p *para) checkURL(s string) error {
 	r := regexp.MustCompile(`google\.com\/(\w.+)\/d\/(\w.+)\/`)
 	if r.MatchString(s) {
 		res := r.FindAllStringSubmatch(s, -1)
 		p.Kind = res[0][1]
-		p.Id = res[0][2]
+		p.ID = res[0][2]
 		if p.Kind == "file" {
-			p.Url = anyurl + "&id=" + p.Id
+			p.URL = anyurl + "&id=" + p.ID
 		} else {
 			if p.Kind == "presentation" {
-				p.Url = docutl + p.Kind + "/d/" + p.Id + "/export/" + p.Ext
+				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export/" + p.Ext
 			} else {
-				p.Url = docutl + p.Kind + "/d/" + p.Id + "/export?format=" + p.Ext
+				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export?format=" + p.Ext
 			}
 		}
 	} else {
-		return errors.New("Error: URL is wrong.")
+		return errors.New("error: URL is wrong")
 	}
 	return nil
 }
@@ -150,7 +173,7 @@ func (p *para) checkUrl(s string) error {
 // download : Main method of download.
 func (p *para) download(url string) error {
 	var err error
-	err = p.checkUrl(url)
+	err = p.checkURL(url)
 	if err != nil {
 		return err
 	}
@@ -159,25 +182,24 @@ func (p *para) download(url string) error {
 		return err
 	}
 	p.Client = &http.Client{Jar: jar}
-	res, err := p.fetch(p.Url)
+	res, err := p.fetch(p.URL)
 	if err != nil {
 		return err
 	}
 	if res.StatusCode == 200 {
 		if len(res.Header["Set-Cookie"]) == 0 {
 			return p.saveFile(res)
+		}
+		p.checkCookie(res.Header["Set-Cookie"][0])
+		if len(p.Code) == 0 && p.Kind == "file" {
+			return fmt.Errorf("file ID [ %s ] is not shared, while the file is existing", p.ID)
+		} else if len(p.Code) == 0 && p.Kind != "file" {
+			return p.saveFile(res)
 		} else {
-			p.checkCookie(res.Header["Set-Cookie"][0])
-			if len(p.Code) == 0 && p.Kind == "file" {
-				return errors.New(fmt.Sprintf("File ID [ %s ] is not shared, while the file is existing.\n", p.Id))
-			} else if len(p.Code) == 0 && p.Kind != "file" {
-				return p.saveFile(res)
-			} else {
-				return p.downloadLargeFile()
-			}
+			return p.downloadLargeFile()
 		}
 	} else {
-		return errors.New(fmt.Sprintf("File ID [ %s ] cannot be downloaded as [ %s ].\n", p.Id, p.Ext))
+		return fmt.Errorf("file ID [ %s ] cannot be downloaded as [ %s ]", p.ID, p.Ext)
 	}
 	return nil
 }
@@ -192,6 +214,7 @@ func handler(c *cli.Context) {
 	p := &para{
 		Ext:     c.String("extension"),
 		WorkDir: workdir,
+		Disp:    c.Bool("NoProgress"),
 	}
 	if terminal.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
@@ -239,7 +262,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.0.2"
+	a.Version = "1.0.3"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
@@ -253,6 +276,10 @@ func createHelp() *cli.App {
 		cli.StringFlag{
 			Name:  "filename, f",
 			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+		},
+		cli.BoolFlag{
+			Name:  "NoProgress, np",
+			Usage: "When this option is used, the progression is not shown.",
 		},
 	}
 	return a

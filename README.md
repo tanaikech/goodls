@@ -10,9 +10,13 @@ goodls
 This is a CLI tool to download shared files from Google Drive.
 
 # Demo
-![](images/demo.gif)
+<a name="demo1"></a>
+![](images/demo1.gif)
 
 The image used for this demonstration was created by [k3-studio](https://k3-studio.deviantart.com/art/Chromatic-spiral-416032436)
+
+<a name="demo2"></a>
+![](images/demo2.gif)
 
 <a name="Description"></a>
 # Description
@@ -114,6 +118,12 @@ If you have any questions and commissions for me, feel free to tell me.
 
     1. Files with large size has gotten to be able to be used.
         - In order to download files with large size (several gigabytes), files are saved by chunks.
+
+* v1.0.3 (September 4, 2018)
+
+    1. When the files are downloaded, the progress of downloading got to be able to be displayed.
+        - This scene can be seen at [this demonstration video](#demo2).
+        - If the new option of ``--np`` is used, the progress is not displayed.
 
 
 [TOP](#TOP)
