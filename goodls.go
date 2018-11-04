@@ -1,3 +1,5 @@
+// Package main (goodls.go) :
+// These methods are for downloading shared files from Google Drive.
 package main
 
 import (
@@ -30,20 +32,28 @@ const (
 type chunks struct {
 	io.Reader
 	cChunk int64
+	Size   int64
 }
 
 // para : Structure for each parameter
 type para struct {
+	APIKey      string
 	Client      *http.Client
 	Code        string
 	ContentType string
+	Disp        bool
+	DlFolder    bool
 	Ext         string
 	Filename    string
 	ID          string
 	Kind        string
+	OverWrite   bool
+	SearchID    string
+	ShowFileInf bool
+	Size        int64
+	Skip        bool
 	URL         string
 	WorkDir     string
-	Disp        bool
 }
 
 // Read : For io.Reader
@@ -51,7 +61,11 @@ func (c *chunks) Read(dat []byte) (int, error) {
 	n, err := c.Reader.Read(dat)
 	c.cChunk += int64(n)
 	if err == nil {
-		fmt.Printf("\rDownloading (bytes)... %d", c.cChunk)
+		if c.Size > 0 {
+			fmt.Printf("\rDownloading (bytes)... %d / %d", c.cChunk, c.Size)
+		} else {
+			fmt.Printf("\rDownloading (bytes)... %d", c.cChunk)
+		}
 	}
 	return n, err
 }
@@ -71,7 +85,14 @@ func (p *para) saveFile(res *http.Response) error {
 	if p.Disp {
 		_, err = io.Copy(file, res.Body)
 	} else {
-		_, err = io.Copy(file, &chunks{Reader: res.Body})
+		if p.APIKey != "" {
+			_, err = io.Copy(file, &chunks{
+				Reader: res.Body,
+				Size:   p.Size,
+			})
+		} else {
+			_, err = io.Copy(file, &chunks{Reader: res.Body})
+		}
 	}
 	if err != nil {
 		return err
@@ -150,6 +171,7 @@ func (p *para) fetch(url string) (*http.Response, error) {
 
 // checkURL : Parse inputted URL.
 func (p *para) checkURL(s string) error {
+	var err error
 	r := regexp.MustCompile(`google\.com\/(\w.+)\/d\/(\w.+)\/`)
 	if r.MatchString(s) {
 		res := r.FindAllStringSubmatch(s, -1)
@@ -158,14 +180,49 @@ func (p *para) checkURL(s string) error {
 		if p.Kind == "file" {
 			p.URL = anyurl + "&id=" + p.ID
 		} else {
+			if p.Ext == "" {
+				p.Ext = "pdf"
+			} else if p.Ext == "ms" {
+				switch p.Kind {
+				case "spreadsheets":
+					p.Ext = "xlsx"
+				case "document":
+					p.Ext = "docx"
+				case "presentation":
+					p.Ext = "pptx"
+				}
+			}
 			if p.Kind == "presentation" {
 				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export/" + p.Ext
 			} else {
 				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export?format=" + p.Ext
 			}
 		}
+		if p.APIKey != "" && p.ShowFileInf {
+			p.SearchID = p.ID
+			err = p.getFilesFromFolder()
+			if err != nil {
+				return err
+			}
+			return nil
+		}
 	} else {
-		return errors.New("error: URL is wrong")
+		folder := regexp.MustCompile(`google\.com\/drive\/folders\/([a-zA-Z0-9-_]+)`)
+		if folder.MatchString(s) {
+			p.DlFolder = true
+			res := folder.FindAllStringSubmatch(s, -1)
+			p.SearchID = res[0][1]
+			if p.APIKey != "" {
+				err = p.getFilesFromFolder()
+				if err != nil {
+					return err
+				}
+			} else {
+				return errors.New("please use API key to download files in a folder")
+			}
+		} else {
+			return errors.New("URL is wrong")
+		}
 	}
 	return nil
 }
@@ -176,6 +233,13 @@ func (p *para) download(url string) error {
 	err = p.checkURL(url)
 	if err != nil {
 		return err
+	}
+	if p.APIKey != "" && p.ShowFileInf {
+		return nil
+	} else if p.APIKey == "" && p.ShowFileInf {
+		return errors.New("When you want to use the option '--fileinf', please use API key")
+	} else if p.APIKey != "" && p.DlFolder {
+		return nil
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -212,9 +276,14 @@ func handler(c *cli.Context) {
 		log.Fatal(err)
 	}
 	p := &para{
-		Ext:     c.String("extension"),
-		WorkDir: workdir,
-		Disp:    c.Bool("NoProgress"),
+		APIKey:      c.String("apikey"),
+		Disp:        c.Bool("NoProgress"),
+		Ext:         c.String("extension"),
+		OverWrite:   c.Bool("overwrite"),
+		ShowFileInf: c.Bool("fileinf"),
+		Skip:        c.Bool("skip"),
+		WorkDir:     workdir,
+		DlFolder:    false,
 	}
 	if terminal.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
@@ -262,7 +331,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.0.3"
+	a.Version = "1.1.0"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
@@ -280,6 +349,22 @@ func createHelp() *cli.App {
 		cli.BoolFlag{
 			Name:  "NoProgress, np",
 			Usage: "When this option is used, the progression is not shown.",
+		},
+		cli.BoolFlag{
+			Name:  "overwrite, o",
+			Usage: "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
+		},
+		cli.BoolFlag{
+			Name:  "skip, s",
+			Usage: "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
+		},
+		cli.BoolFlag{
+			Name:  "fileinf, i",
+			Usage: "Retrieve file information. API key is required.",
+		},
+		cli.StringFlag{
+			Name:  "apikey, key",
+			Usage: "API key is uded to retrieve file list from shared folder and file information.",
 		},
 	}
 	return a

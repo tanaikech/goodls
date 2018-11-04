@@ -7,7 +7,7 @@ goodls
 
 <a name="Overview"></a>
 # Overview
-This is a CLI tool to download shared files from Google Drive.
+This is a CLI tool to download shared files from Google Drive. From version 1.1.0, this CLI tool got to be able to download files with the folder structure from the shared folder in Google Drive.
 
 # Demo
 <a name="demo1"></a>
@@ -87,10 +87,68 @@ https://docs.google.com/presentation/d/#####/edit?usp=sharing
 
 **When you download shared files from Google Drive, please confirm whether the files are shared.**
 
+## Download all files from shared folder
+<a name="demo3"></a>
+![](images/downloadFolder_sample.png)
+
+When above structure is downloaded, the command is like below. At that time, the folder ID is the folder ID of "sampleFolder1".
+
+![](images/demo3.gif)
+
+Files are downloaded from the shared folder. In this demonstration, the fake folder ID and API key are used.
+
+### Retrieve API key
+In order to use this, please retrieve API key as the following flow.
+
+1. Login to Google.
+2. Access to [https://console.cloud.google.com/?hl=en](https://console.cloud.google.com/?hl=en).
+3. Click select project at the right side of "Google Cloud Platform" of upper left of window.
+4. Click "NEW PROJECT"
+    1. Input "Project Name".
+    2. Click "CREATE".
+    3. Open the created project.
+    4. Click "Enable APIs and get credentials like keys".
+    5. Click "Library" at left side.
+    6. Input "Drive API" in "Search for APIs & Services".
+    7. Click "Google Drive API".
+    8. Click "ENABLE".
+    9. Back to [https://console.cloud.google.com/?hl=en](https://console.cloud.google.com/?hl=en).
+    10. Click "Enable APIs and get credentials like keys".
+    11. Click "Credentials" at left side.
+    12. Click "Create credentials" and select API key.
+    13. Copy the API key. You can use this API key.
+
+### Download
+When the URL of shared folder is ``https://drive.google.com/drive/folders/#####?usp=sharing``, you can download all files in the folder by the following command.
+
+~~~bash
+$ goodls -u https://drive.google.com/drive/folders/#####?usp=sharing -key [APIkey]
+~~~
+
+- Project files cannot be downloaded by API key. If you want to download the project files, you can download them by [ggsrun](), because ggsrun uses OAuth2.
+- This new function uses the Go library of [go-getfilelist](https://github.com/tanaikech/go-getfilelist).
+- When the option of ``--NoProgres``, ``-np`` is used, the progress information is not seen. This is a silent mode.
+- If the files which are tried to be downloaded are existing, an error occurs. But when you use the option ``--overwrite`` and ``--skip``, the files are overwritten and skipped, respectively.
+
+### Retrieve information of file and folder
+When you want to retrieve the information of file and folder, you can do it as follows.
+
+#### For file
+~~~bash
+$ goodls -u https://docs.google.com/spreadsheets/d/#####/edit?usp=sharing -key [APIkey] -i
+~~~
+
+#### For folder
+~~~bash
+$ goodls -u https://drive.google.com/drive/folders/#####?usp=sharing -key [APIkey] -i
+~~~
+
 # Q&A
 - I want to download **shared projects** from user's Google Drive.
     - You can download **shared projects** using [ggsrun](https://github.com/tanaikech/ggsrun).
     - ggsrun can also download **shared files** from other user's Google Drive using Drive API which needs the access token.
+- I want to download all files including the standalone projects from the shared folder and own folder.
+    - You can achieve it using [ggsrun](https://github.com/tanaikech/ggsrun).
 
 -----
 
@@ -122,8 +180,15 @@ If you have any questions and commissions for me, feel free to tell me.
 * v1.0.3 (September 4, 2018)
 
     1. When the files are downloaded, the progress of downloading got to be able to be displayed.
-        - This scene can be seen at [this demonstration video](#demo2).
+        - This demonstration can be seen at [Demo](#demo2).
         - If the new option of ``--np`` is used, the progress is not displayed.
+
+* v1.1.0 (November 4, 2018)
+
+    1. By using API key, files from **the shared folder** got to be able to be downloaded while keeping the folder structure.
+        - This demonstration can be seen at [Demo](#demo3).
+    1. By using API key, the information of shared file and folder can be also retrieved.
+    1. About the option of ``--extension`` and ``-e``, when ``-e ms`` is used, Google Docs (Document, Spreadsheet, Slides) are converted to Microsoft Docs (Word, Excel, Powerpoint), respectively.
 
 
 [TOP](#TOP)
