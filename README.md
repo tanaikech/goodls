@@ -192,7 +192,7 @@ If you have any questions and commissions for me, feel free to tell me.
 
 * v1.1.1 (November 13, 2018)
 
-	1. Version of [go-getfilelist]() was updated. Because the structure of ``drive.File`` got to be able to be used, I also updated this application.
+	1. Version of [go-getfilelist](https://github.com/tanaikech/go-getfilelist) was updated. Because the structure of ``drive.File`` got to be able to be used, I also updated this application.
 
 
 [TOP](#TOP)
