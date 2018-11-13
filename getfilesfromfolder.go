@@ -16,6 +16,7 @@ import (
 	"time"
 
 	getfilelist "github.com/tanaikech/go-getfilelist"
+	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi/transport"
 )
 
@@ -40,39 +41,36 @@ func ext2mime(ext string) string {
 }
 
 // downloadFileByAPIKey : Download file using API key.
-func (p *para) downloadFileByAPIKey(file getfilelist.FileS) error {
+func (p *para) downloadFileByAPIKey(file *drive.File) error {
 	u, err := url.Parse(driveAPI)
 	if err != nil {
 		return err
 	}
-	u.Path = path.Join(u.Path, file.ID)
+	u.Path = path.Join(u.Path, file.Id)
 	q := u.Query()
 	q.Set("key", p.APIKey)
 	if strings.Contains(file.MimeType, "application/vnd.google-apps") {
 		u.Path = path.Join(u.Path, "export")
-		q.Set("mimeType", file.WebView)
+		q.Set("mimeType", file.WebViewLink)
 	} else {
 		q.Set("alt", "media")
 	}
 	u.RawQuery = q.Encode()
 	bkWorkDir := p.WorkDir
 	bkFilename := p.Filename
-	p.WorkDir = file.WebLink
+	p.WorkDir = file.WebContentLink
 	p.Filename = file.Name
-	timeOut, err := func(size int64, err error) (int64, error) {
-		if err == nil || size == 0 {
+	timeOut := func(size int64) int64 {
+		if size == 0 {
 			switch {
 			case size < 100000000:
-				return 3600, nil
+				return 3600
 			case size > 100000000:
-				return 0, nil
+				return 0
 			}
 		}
-		return 0, fmt.Errorf("%s", err)
-	}(strconv.ParseInt(file.Size, 10, 64))
-	if err != nil {
-		return err
-	}
+		return 0
+	}(file.Size)
 	p.Client = &http.Client{
 		Timeout: time.Duration(timeOut) * time.Second,
 	}
@@ -95,10 +93,10 @@ func (p *para) downloadFileByAPIKey(file getfilelist.FileS) error {
 }
 
 // makeFileByCondition : Make file by condition.
-func (p *para) makeFileByCondition(file getfilelist.FileS) error {
-	if er := chkFile(filepath.Join(file.WebLink, file.Name)); er {
+func (p *para) makeFileByCondition(file *drive.File) error {
+	if er := chkFile(filepath.Join(file.WebContentLink, file.Name)); er {
 		if !p.OverWrite && !p.Skip {
-			return fmt.Errorf("'%s' is existing. If you want to overwrite, please use an option '--overwrite'", file.WebLink)
+			return fmt.Errorf("'%s' is existing. If you want to overwrite, please use an option '--overwrite'", file.WebContentLink)
 		}
 		if p.OverWrite && !p.Skip {
 			return p.downloadFileByAPIKey(file)
@@ -178,9 +176,8 @@ func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
 		}
 		for _, file := range e.Files {
 			if file.MimeType != "application/vnd.google-apps.script" {
-				file.WebLink = path // Substituting
-				size, _ := strconv.ParseInt(file.Size, 10, 64)
-				p.Size = size
+				file.WebContentLink = path // Substituting
+				p.Size = file.Size
 				err = p.makeFileByCondition(file)
 				if err != nil {
 					return err
@@ -251,18 +248,18 @@ func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 							return extToMime(extt)
 						}()
 						if cmime != "" {
-							fileList.FileList[i].Files[j].WebView = cmime // Substituting as OutMimeType
+							fileList.FileList[i].Files[j].WebViewLink = cmime // Substituting as OutMimeType
 						} else {
-							fileList.FileList[i].Files[j].WebView = mime // Substituting as OutMimeType
+							fileList.FileList[i].Files[j].WebViewLink = mime // Substituting as OutMimeType
 						}
 					}
 				} else {
-					fileList.FileList[i].Files[j].WebView = mime // Substituting as OutMimeType
+					fileList.FileList[i].Files[j].WebViewLink = mime // Substituting as OutMimeType
 				}
 				if file.MimeType != "application/vnd.google-apps.script" {
 					ext := filepath.Ext(file.Name)
 					if ext == "" {
-						fileList.FileList[i].Files[j].Name += mime2ext(fileList.FileList[i].Files[j].WebView)
+						fileList.FileList[i].Files[j].Name += mime2ext(fileList.FileList[i].Files[j].WebViewLink)
 					}
 				}
 			}
@@ -280,7 +277,7 @@ func (p *para) getFilesFromFolder() error {
 		return err
 	}
 	if p.ShowFileInf {
-		r, _ := json.Marshal(fileList)
+		r, err := json.Marshal(fileList)
 		if err != nil {
 			return err
 		}

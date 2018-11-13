@@ -190,5 +190,9 @@ If you have any questions and commissions for me, feel free to tell me.
     1. By using API key, the information of shared file and folder can be also retrieved.
     1. About the option of ``--extension`` and ``-e``, when ``-e ms`` is used, Google Docs (Document, Spreadsheet, Slides) are converted to Microsoft Docs (Word, Excel, Powerpoint), respectively.
 
+* v1.1.1 (November 13, 2018)
+
+	1. Version of [go-getfilelist]() was updated. Because the structure of ``drive.File`` got to be able to be used, I also updated this application.
+
 
 [TOP](#TOP)
