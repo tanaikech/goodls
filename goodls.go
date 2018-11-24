@@ -37,23 +37,25 @@ type chunks struct {
 
 // para : Structure for each parameter
 type para struct {
-	APIKey      string
-	Client      *http.Client
-	Code        string
-	ContentType string
-	Disp        bool
-	DlFolder    bool
-	Ext         string
-	Filename    string
-	ID          string
-	Kind        string
-	OverWrite   bool
-	SearchID    string
-	ShowFileInf bool
-	Size        int64
-	Skip        bool
-	URL         string
-	WorkDir     string
+	APIKey            string
+	Client            *http.Client
+	Code              string
+	ContentType       string
+	Disp              bool
+	DlFolder          bool
+	DownloadBytes     int64
+	Ext               string
+	Filename          string
+	ID                string
+	Kind              string
+	OverWrite         bool
+	Resumabledownload string
+	SearchID          string
+	ShowFileInf       bool
+	Size              int64
+	Skip              bool
+	URL               string
+	WorkDir           string
 }
 
 // Read : For io.Reader
@@ -78,7 +80,12 @@ func (p *para) saveFile(res *http.Response) error {
 	if err = p.getFilename(res); err != nil {
 		return err
 	}
-	file, err := os.Create(filepath.Join(p.WorkDir, p.Filename))
+	var file *os.File
+	if p.DownloadBytes == -1 {
+		file, err = os.Create(filepath.Join(p.WorkDir, p.Filename))
+	} else {
+		file, err = os.OpenFile(filepath.Join(p.WorkDir, p.Filename), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	}
 	if err != nil {
 		return err
 	}
@@ -138,8 +145,7 @@ func (p *para) downloadLargeFile() error {
 	if res.StatusCode != 200 && p.Kind != "file" {
 		return fmt.Errorf("error: This error occurs when it downloads a large file of Google Docs.\nMessage: %+v", res)
 	}
-	p.saveFile(res)
-	return nil
+	return p.saveFile(res)
 }
 
 // checkCookie : When a large size of file is downloaded, a code for downloading is retrieved at here.
@@ -199,9 +205,7 @@ func (p *para) checkURL(s string) error {
 			}
 		}
 		if p.APIKey != "" && p.ShowFileInf {
-			p.SearchID = p.ID
-			err = p.getFilesFromFolder()
-			if err != nil {
+			if err := p.showFileInf(); err != nil {
 				return err
 			}
 			return nil
@@ -260,6 +264,13 @@ func (p *para) download(url string) error {
 		} else if len(p.Code) == 0 && p.Kind != "file" {
 			return p.saveFile(res)
 		} else {
+			if p.APIKey != "" && p.Resumabledownload != "" {
+				p.DownloadBytes, err = getDownloadBytes(p.Resumabledownload)
+				if err != nil {
+					return err
+				}
+				return p.resumableDownload()
+			}
 			return p.downloadLargeFile()
 		}
 	} else {
@@ -276,14 +287,16 @@ func handler(c *cli.Context) {
 		log.Fatal(err)
 	}
 	p := &para{
-		APIKey:      c.String("apikey"),
-		Disp:        c.Bool("NoProgress"),
-		Ext:         c.String("extension"),
-		OverWrite:   c.Bool("overwrite"),
-		ShowFileInf: c.Bool("fileinf"),
-		Skip:        c.Bool("skip"),
-		WorkDir:     workdir,
-		DlFolder:    false,
+		APIKey:            c.String("apikey"),
+		Disp:              c.Bool("NoProgress"),
+		DownloadBytes:     -1,
+		Ext:               c.String("extension"),
+		OverWrite:         c.Bool("overwrite"),
+		Resumabledownload: c.String("resumabledownload"),
+		ShowFileInf:       c.Bool("fileinf"),
+		Skip:              c.Bool("skip"),
+		WorkDir:           workdir,
+		DlFolder:          false,
 	}
 	if terminal.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
@@ -331,7 +344,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.1.1"
+	a.Version = "1.2.0"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
@@ -345,6 +358,10 @@ func createHelp() *cli.App {
 		cli.StringFlag{
 			Name:  "filename, f",
 			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+		},
+		cli.StringFlag{
+			Name:  "resumabledownload, r",
+			Usage: "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
 		},
 		cli.BoolFlag{
 			Name:  "NoProgress, np",

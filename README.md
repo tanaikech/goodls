@@ -7,24 +7,22 @@ goodls
 
 <a name="Overview"></a>
 # Overview
-This is a CLI tool to download shared files from Google Drive. From version 1.1.0, this CLI tool got to be able to download files with the folder structure from the shared folder in Google Drive.
-
-# Demo
-<a name="demo1"></a>
-![](images/demo1.gif)
-
-The image used for this demonstration was created by [k3-studio](https://k3-studio.deviantart.com/art/Chromatic-spiral-416032436)
-
-<a name="demo2"></a>
-![](images/demo2.gif)
+This is a CLI tool to download shared files and folders from Google Drive. For large file, the resumable download can be also run.
 
 <a name="Description"></a>
-# Description
-We have already known that the shared files on Google Drive can be downloaded without the authorization. But when the size of file becomes large (about 40MB), it requires a little ingenuity to download the file. It requires to access 2 times to Google Drive. At 1st access, it retrieves a cookie and a code for downloading. At 2nd access, the file is downloaded using the cookie and code. I created this process as a CLI tool. This tool has the following features.
+# Methods
+### 1. [Download shared files from the shared URL without the authorization.](#downloadsharedfiles)
+We have already known that the shared files on Google Drive can be downloaded without the authorization. But when the size of file becomes large (about 40MB), it requires a little ingenuity to download the file. It requires to access 2 times to Google Drive. At 1st access, it retrieves a cookie and a code for downloading. At 2nd access, the file is downloaded using the cookie and code. I created this process as a CLI tool.
 
-- Use suitable process for size and type of file.
-- Retrieve filename and mimetype from response header.
-- Can download all shared files except for project files.
+### 2. [Download all shared files with the folder structure from the shared folder.](#downloadfilesfromfolder)
+**This method uses API key.**
+
+There are sometimes the situation for downloading files in a sharead folder. But I couldn't find the CLI applications for downloading files in the shared folder. So I implemented this. But when in order to retrieve the file list from the shared file, Drive API is required to be used. In order to use Drive API, it is required to use OAuth2, Service account and API key. So I selected to use API key which is the simplest way. This CLI tool can retrieve the file list in the shared folder using API key and download all files in the shared folder.
+
+### 3. [Run resumable download for large files.](#resumabledownloadoffile)
+**This method uses API key.**
+
+At [a recent proposal](https://github.com/tanaikech/goodls/issues/3), I knew the requirement of the resumable download of shared file. So I implemented this.
 
 # How to Install
 Download an executable file of goodls from [the release page](https://github.com/tanaikech/goodls/releases) and import to a directory with path.
@@ -38,6 +36,16 @@ $ go get -u github.com/tanaikech/goodls
 ~~~
 
 # Usage
+<a name="downloadsharedfiles"></a>
+## 1. Download shared files
+<a name="demo1"></a>
+![](images/demo1.gif)
+
+The image used for this demonstration was created by [k3-studio](https://k3-studio.deviantart.com/art/Chromatic-spiral-416032436)
+
+<a name="demo2"></a>
+![](images/demo2.gif)
+
 You can use this just after you download or install goodls. You are not required to do like OAuth2 process.
 
 ~~~bash
@@ -48,7 +56,7 @@ $ goodls -u [URL of shared file on Google Drive]
     - ``$ goodls --help``
 - **Options**
     - ``-e``
-        - Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation). Default is ``pdf``.
+        - Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation). Default is ``pdf``. When ``ms`` is used, the sharead Googld Docs can be downloaded as Microsoft Docs.
         - Sample :
             - ``$ goodls -u https://docs.google.com/document/d/#####/edit?usp=sharing -e txt``
     - ``-f``
@@ -64,7 +72,7 @@ $ goodls -u [URL of shared file on Google Drive]
         - ``https://drive.google.com/file/d/#####/view?usp=sharing``
 
 
-## File with URLs
+### File with several URLs
 If you have a file including URLs, you can input the URL data using standard input and pipe as follows. If wrong URL is included, the URL is skipped.
 
 ~~~bash
@@ -87,7 +95,8 @@ https://docs.google.com/presentation/d/#####/edit?usp=sharing
 
 **When you download shared files from Google Drive, please confirm whether the files are shared.**
 
-## Download all files from shared folder
+<a name="downloadfilesfromfolder"></a>
+## 2. Download all files from shared folder
 <a name="demo3"></a>
 ![](images/downloadFolder_sample.png)
 
@@ -97,6 +106,7 @@ When above structure is downloaded, the command is like below. At that time, the
 
 Files are downloaded from the shared folder. In this demonstration, the fake folder ID and API key are used.
 
+<a name="retrieveapikey"></a>
 ### Retrieve API key
 In order to use this, please retrieve API key as the following flow.
 
@@ -143,6 +153,44 @@ $ goodls -u https://docs.google.com/spreadsheets/d/#####/edit?usp=sharing -key [
 $ goodls -u https://drive.google.com/drive/folders/#####?usp=sharing -key [APIkey] -i
 ~~~
 
+<a name="resumabledownloadoffile"></a>
+## 3. Resumable download of shared file
+When you use this option, at first, please retrieve API key. About how to retrieve API key, you can see at [here](#retrieveapikey).
+
+When you want to download 100 MBytes of the shared file, you can use the following command.
+
+~~~bash
+$ goodls -u [URL of shared file on Google Drive] -key [APIkey] -r 100m
+~~~
+
+- Please use the option ``-r``. In this sample, ``100m`` means to download 100 MBytes of the shared file.
+    - If you want to download 1 GB, please use ``-r 1g``.
+    - If you use ``-r 1000000``, 1 MByte of the file will be able to be downloaded.
+
+You can see the actual running of this option at the following demonstration movie.
+
+<a name="demo4"></a>
+![](images/demo4.gif)
+
+In this demonstration, the following command is run 3 times.
+
+~~~bash
+$ goodls -u https://drive.google.com/drive/folders/abcdefg?usp=sharing -key htjklmn -r 80m
+~~~
+
+- At 1st run, the data of 0 - 80 Mbytes is downloaded.
+    - You can see ``New download`` at "Current status".
+- At 2nd run, the data of 80 - last is downloaded.
+    - You can see ``Resumable download`` at "Current status".
+- At 3rd run, the download has already been done. So the checksum is shown.
+    - You can see ``Download has already done.`` at "Current status".
+
+#### Note
+- Reason that API key is used for this.
+    - When it accesses to the shared file without the authorization, the file size and md5checksum cannot be retrieved. So in order to use Drive API, I adopted to use API key.
+- Reason that the download size is inputted every time.
+    - When this option is run 1 time, 1 quota is used for Drive API. So I adopted this way.
+
 # Q&A
 - I want to download **shared projects** from user's Google Drive.
     - You can download **shared projects** using [ggsrun](https://github.com/tanaikech/ggsrun).
@@ -185,7 +233,7 @@ If you have any questions and commissions for me, feel free to tell me.
 
 * v1.1.0 (November 4, 2018)
 
-    1. By using API key, files from **the shared folder** got to be able to be downloaded while keeping the folder structure.
+    1. By using API key, [files from **the shared folder** got to be able to be downloaded while keeping the folder structure](downloadfilesfromfolder).
         - This demonstration can be seen at [Demo](#demo3).
     1. By using API key, the information of shared file and folder can be also retrieved.
     1. About the option of ``--extension`` and ``-e``, when ``-e ms`` is used, Google Docs (Document, Spreadsheet, Slides) are converted to Microsoft Docs (Word, Excel, Powerpoint), respectively.
@@ -193,6 +241,11 @@ If you have any questions and commissions for me, feel free to tell me.
 * v1.1.1 (November 13, 2018)
 
 	1. Version of [go-getfilelist](https://github.com/tanaikech/go-getfilelist) was updated. Because the structure of ``drive.File`` got to be able to be used, I also updated this application.
+
+* v1.2.0 (November 24, 2018)
+
+    1. By using API key, the shared large files can be run [**the resumable download**](#resumabledownloadoffile).
+        - This demonstration can be seen at [Demo](#demo4).
 
 
 [TOP](#TOP)

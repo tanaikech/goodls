@@ -12,6 +12,8 @@ We have already known that the shared files on Google Drive can be downloaded wi
 
 - By using API key, goodls can download all files in a shared folder.
 
+- By using API key, goodls can run the resumable download of files.
+
 ---------------------------------------------------------------
 
 # How to Install
