@@ -242,6 +242,8 @@ If you have any questions and commissions for me, feel free to tell me.
 
 	1. Version of [go-getfilelist](https://github.com/tanaikech/go-getfilelist) was updated. Because the structure of ``drive.File`` got to be able to be used, I also updated this application.
 
+<a name="v120"></a>
+
 * v1.2.0 (November 24, 2018)
 
     1. By using API key, the shared large files can be run [**the resumable download**](#resumabledownloadoffile).
