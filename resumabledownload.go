@@ -59,7 +59,7 @@ func (p *para) showFileInf() error {
 	return nil
 }
 
-// getDownloadBytes : Get download size for resumable download. Minimum value is 10 MB.
+// getDownloadBytes : Get download size for resumable download.
 func getDownloadBytes(size string) (int64, error) {
 	reg := regexp.MustCompile("^([0-9.]+)$|^([0-9.]+)([bkmgt])")
 	regRes := reg.FindStringSubmatch(strings.ToLower(size))
