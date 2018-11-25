@@ -24,6 +24,7 @@ import (
 
 const (
 	appname = "goodls"
+	envval  = "GOODLS_APIKEY"
 	anyurl  = "https://drive.google.com/uc?export=download"
 	docutl  = "https://docs.google.com/"
 )
@@ -138,6 +139,13 @@ func (p *para) getFilename(s *http.Response) error {
 // downloadLargeFile : When a large size of file is downloaded, this method is used.
 func (p *para) downloadLargeFile() error {
 	fmt.Println("Now downloading.")
+	if p.APIKey != "" {
+		dlfile, err := p.getFileInfFromP()
+		if err != nil {
+			return err
+		}
+		p.Size = dlfile.Size
+	}
 	res, err := p.fetch(p.URL + "&confirm=" + p.Code)
 	if err != nil {
 		return err
@@ -298,6 +306,9 @@ func handler(c *cli.Context) {
 		WorkDir:           workdir,
 		DlFolder:          false,
 	}
+	if envv := os.Getenv(envval); c.String("apikey") == "" && envv != "" {
+		p.APIKey = strings.TrimSpace(envv)
+	}
 	if terminal.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
 			createHelp().Run(os.Args)
@@ -344,7 +355,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.2.0"
+	a.Version = "1.2.1"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",

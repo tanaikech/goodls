@@ -128,6 +128,16 @@ In order to use this, please retrieve API key as the following flow.
     12. Click "Create credentials" and select API key.
     13. Copy the API key. You can use this API key.
 
+##### Registering API key to environment variable
+- When API key is registered to the environment variable. When ``GOODLS_APIKEY`` as the environment variable is set API key, goodls uses API key from the environment variable.
+- If API key is used with the option at the command line, the priority of option is higher than the environment variable.
+
+For example, in the case of bash, please add a following code to .bashrc.
+
+~~~bash
+export GOODLS_APIKEY=### your API key ###
+~~~
+
 ### Download
 When the URL of shared folder is ``https://drive.google.com/drive/folders/#####?usp=sharing``, you can download all files in the folder by the following command.
 
@@ -248,6 +258,12 @@ If you have any questions and commissions for me, feel free to tell me.
 
     1. By using API key, the shared large files can be run [**the resumable download**](#resumabledownloadoffile).
         - This demonstration can be seen at [Demo](#demo4).
+
+<a name="v121"></a>
+
+* v1.2.1 (November 25, 2018)
+
+    1. API key got to be able to be used by an environment variable. When ``GOODLS_APIKEY`` as the environment variable is set API key, goodls uses API key from the environment variable.
 
 
 [TOP](#TOP)

@@ -40,8 +40,8 @@ type dlParams struct {
 	End             int64
 }
 
-// showFileInf : Show file information.
-func (p *para) showFileInf() error {
+// getFileInfFromP : Retrieve file information from *para.
+func (p *para) getFileInfFromP() (*drive.File, error) {
 	v := &valResumableDownload{
 		para: *p,
 	}
@@ -49,9 +49,18 @@ func (p *para) showFileInf() error {
 		Transport: &transport.APIKey{Key: p.APIKey},
 	}
 	if err := v.getFileInf(); err != nil {
+		return nil, err
+	}
+	return v.DownloadFile, nil
+}
+
+// showFileInf : Show file information.
+func (p *para) showFileInf() error {
+	dlfile, err := p.getFileInfFromP()
+	if err != nil {
 		return err
 	}
-	r, err := json.Marshal(v.DownloadFile)
+	r, err := json.Marshal(dlfile)
 	if err != nil {
 		return err
 	}
