@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
@@ -48,6 +47,7 @@ type para struct {
 	Ext               string
 	Filename          string
 	ID                string
+	InputtedMimeType  []string
 	Kind              string
 	OverWrite         bool
 	Resumabledownload string
@@ -288,11 +288,11 @@ func (p *para) download(url string) error {
 }
 
 // handler : Initialize of "para".
-func handler(c *cli.Context) {
+func handler(c *cli.Context) error {
 	var err error
 	workdir, err := filepath.Abs(".")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	p := &para{
 		APIKey:            c.String("apikey"),
@@ -305,6 +305,12 @@ func handler(c *cli.Context) {
 		Skip:              c.Bool("skip"),
 		WorkDir:           workdir,
 		DlFolder:          false,
+		InputtedMimeType: func(mime string) []string {
+			if mime != "" {
+				return regexp.MustCompile(`\s*,\s*`).Split(mime, -1)
+			}
+			return nil
+		}(c.String("mimetype")),
 	}
 	if envv := os.Getenv(envval); c.String("apikey") == "" && envv != "" {
 		p.APIKey = strings.TrimSpace(envv)
@@ -312,13 +318,12 @@ func handler(c *cli.Context) {
 	if terminal.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
 			createHelp().Run(os.Args)
-			return
+			return nil
 		}
 		p.Filename = c.String("filename")
 		err = p.download(c.String("url"))
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 	} else {
 		var urls []string
@@ -330,12 +335,10 @@ func handler(c *cli.Context) {
 			urls = append(urls, scanner.Text())
 		}
 		if scanner.Err() != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", scanner.Err())
-			os.Exit(1)
+			return scanner.Err()
 		}
 		if len(urls) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: No URL data. Please check help.\n\n $ %s --help\n\n", appname)
-			os.Exit(1)
+			return fmt.Errorf("No URL data. Please check help\n\n $ %s --help", appname)
 		}
 		for _, url := range urls {
 			err = p.download(url)
@@ -345,7 +348,7 @@ func handler(c *cli.Context) {
 			p.Filename = ""
 		}
 	}
-	return
+	return nil
 }
 
 // createHelp : Create help document.
@@ -355,7 +358,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.2.1"
+	a.Version = "1.2.2"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
@@ -369,6 +372,10 @@ func createHelp() *cli.App {
 		cli.StringFlag{
 			Name:  "filename, f",
 			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+		},
+		cli.StringFlag{
+			Name:  "mimetype, m",
+			Usage: "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
 		},
 		cli.StringFlag{
 			Name:  "resumabledownload, r",
@@ -402,5 +409,9 @@ func createHelp() *cli.App {
 func main() {
 	a := createHelp()
 	a.Action = handler
-	a.Run(os.Args)
+	err := a.Run(os.Args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

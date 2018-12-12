@@ -17,7 +17,7 @@ We have already known that the shared files on Google Drive can be downloaded wi
 ### 2. [Download all shared files with the folder structure from the shared folder.](#downloadfilesfromfolder)
 **This method uses API key.**
 
-There are sometimes the situation for downloading files in a sharead folder. But I couldn't find the CLI applications for downloading files in the shared folder. So I implemented this. But when in order to retrieve the file list from the shared file, Drive API is required to be used. In order to use Drive API, it is required to use OAuth2, Service account and API key. So I selected to use API key which is the simplest way. This CLI tool can retrieve the file list in the shared folder using API key and download all files in the shared folder.
+There are sometimes the situation for downloading files in a shared folder. But I couldn't find the CLI applications for downloading files in the shared folder. So I implemented this. But when in order to retrieve the file list from the shared file, Drive API is required to be used. In order to use Drive API, it is required to use OAuth2, Service account and API key. So I selected to use API key which is the simplest way. This CLI tool can retrieve the file list in the shared folder using API key and download all files in the shared folder. From [version 1.2.2](#v122), you can retrieve only files with the specific mimeType from the folder.
 
 ### 3. [Run resumable download for large files.](#resumabledownloadoffile)
 **This method uses API key.**
@@ -56,7 +56,7 @@ $ goodls -u [URL of shared file on Google Drive]
     - ``$ goodls --help``
 - **Options**
     - ``-e``
-        - Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation). Default is ``pdf``. When ``ms`` is used, the sharead Googld Docs can be downloaded as Microsoft Docs.
+        - Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation). Default is ``pdf``. When ``ms`` is used, the shared Google Docs can be downloaded as Microsoft Docs.
         - Sample :
             - ``$ goodls -u https://docs.google.com/document/d/#####/edit?usp=sharing -e txt``
     - ``-f``
@@ -149,6 +149,8 @@ $ goodls -u https://drive.google.com/drive/folders/#####?usp=sharing -key [APIke
 - This new function uses the Go library of [go-getfilelist](https://github.com/tanaikech/go-getfilelist).
 - When the option of ``--NoProgres``, ``-np`` is used, the progress information is not seen. This is a silent mode.
 - If the files which are tried to be downloaded are existing, an error occurs. But when you use the option ``--overwrite`` and ``--skip``, the files are overwritten and skipped, respectively.
+- If you use the option ``-m``, you can retrieve only files with the specific mimeType from the folder. For example, when you want to download PDF and PNG files, please run like below.
+    - ``$ goodls -u [URL] -key [APIkey] -m "application/pdf,image/png"``
 
 ### Retrieve information of file and folder
 When you want to retrieve the information of file and folder, you can do it as follows.
@@ -188,7 +190,7 @@ In this demonstration, the following command is run 3 times.
 $ goodls -u https://drive.google.com/drive/folders/abcdefg?usp=sharing -key htjklmn -r 80m
 ~~~
 
-- At 1st run, the data of 0 - 80 Mbytes is downloaded.
+- At 1st run, the data of 0 - 80 MBytes is downloaded.
     - You can see ``New download`` at "Current status".
 - At 2nd run, the data of 80 - last is downloaded.
     - You can see ``Resumable download`` at "Current status".
@@ -264,6 +266,12 @@ If you have any questions and commissions for me, feel free to tell me.
 * v1.2.1 (November 25, 2018)
 
     1. API key got to be able to be used by an environment variable. When ``GOODLS_APIKEY`` as the environment variable is set API key, goodls uses API key from the environment variable.
+
+<a name="v122"></a>
+
+* v1.2.2 (December 12, 2018)
+
+    1. When files are downloaded from a specific folder, it got to be able to select mimeType. By this, files with the specific mimeType in the specific folder can be retrieved. For this, I updated the go library [go-getfilelist](https://github.com/tanaikech/go-getfilelist).
 
 
 [TOP](#TOP)

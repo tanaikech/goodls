@@ -272,7 +272,12 @@ func (p *para) getFilesFromFolder() error {
 	client := &http.Client{
 		Transport: &transport.APIKey{Key: p.APIKey},
 	}
-	fileList, err := getfilelist.Folder(p.SearchID).Do(client)
+	fileList, err := func() (*getfilelist.FileListDl, error) {
+		if len(p.InputtedMimeType) > 0 {
+			return getfilelist.Folder(p.SearchID).MimeType(p.InputtedMimeType).Do(client)
+		}
+		return getfilelist.Folder(p.SearchID).Do(client)
+	}()
 	if err != nil {
 		return err
 	}
