@@ -272,6 +272,6 @@ If you have any questions and commissions for me, feel free to tell me.
 * v1.2.2 (December 12, 2018)
 
     1. When files are downloaded from a specific folder, it got to be able to select mimeType. By this, files with the specific mimeType in the specific folder can be retrieved. For this, I updated the go library [go-getfilelist](https://github.com/tanaikech/go-getfilelist).
-
+        - ``$ goodls -u [URL] -key [APIkey] -m "application/pdf,image/png"``
 
 [TOP](#TOP)
