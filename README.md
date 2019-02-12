@@ -114,6 +114,8 @@ In order to use this, please retrieve API key as the following flow.
 2. Access to [https://console.cloud.google.com/?hl=en](https://console.cloud.google.com/?hl=en).
 3. Click select project at the right side of "Google Cloud Platform" of upper left of window.
 	- If you cannot see the project, please try to access to [https://console.cloud.google.com/cloud-resource-manager?hl=en](https://console.cloud.google.com/cloud-resource-manager?hl=en). You can also create new project at there.
+		- When you created new project there, please click the left of "Google Cloud Platform". You can see it like 3 horizontal lines. By this, a side bar is opened. At there, please select "API & Services" -> "Library". After this, please check the following flow from ``Click "Library" at left side.``.
+
 4. Click "NEW PROJECT"
     1. Input "Project Name".
     2. Click "CREATE".
