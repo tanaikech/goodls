@@ -113,6 +113,7 @@ In order to use this, please retrieve API key as the following flow.
 1. Login to Google.
 2. Access to [https://console.cloud.google.com/?hl=en](https://console.cloud.google.com/?hl=en).
 3. Click select project at the right side of "Google Cloud Platform" of upper left of window.
+	- If you cannot see the project, please try to access to [https://console.cloud.google.com/cloud-resource-manager?hl=en](https://console.cloud.google.com/cloud-resource-manager?hl=en). You can also create new project at there.
 4. Click "NEW PROJECT"
     1. Input "Project Name".
     2. Click "CREATE".
