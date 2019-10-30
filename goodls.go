@@ -290,9 +290,12 @@ func (p *para) download(url string) error {
 // handler : Initialize of "para".
 func handler(c *cli.Context) error {
 	var err error
-	workdir, err := filepath.Abs(".")
-	if err != nil {
-		return err
+	workdir := c.String("directory")
+	if workdir == "" {
+		workdir, err = filepath.Abs(".")
+		if err != nil {
+			return err
+		}
 	}
 	p := &para{
 		APIKey:            c.String("apikey"),
@@ -358,7 +361,7 @@ func createHelp() *cli.App {
 	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
 	a.Email = "tanaike@hotmail.com"
 	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.2.2"
+	a.Version = "1.2.3"
 	a.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, u",
@@ -400,6 +403,10 @@ func createHelp() *cli.App {
 		cli.StringFlag{
 			Name:  "apikey, key",
 			Usage: "API key is uded to retrieve file list from shared folder and file information.",
+		},
+		cli.StringFlag{
+			Name:  "directory, d",
+			Usage: "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
 		},
 	}
 	return a

@@ -285,7 +285,7 @@ func (v *valResumableDownload) getStatusMsg(fc, end bool) string {
 			[]string{"Current file size of local [bytes]", strconv.FormatInt(v.CurrentFileSize, 10)},
 			[]string{"File size of Google Drive [bytes]", strconv.FormatInt(v.DownloadFile.Size, 10)},
 			[]string{"md5checksum at Google Drive", v.DownloadFile.Md5Checksum},
-			[]string{"md5checksum at Lovcal Drive", cs},
+			[]string{"md5checksum at Local Drive", cs},
 		}
 		return getMsg(setIndent(st, 0), " : ")
 	default:
