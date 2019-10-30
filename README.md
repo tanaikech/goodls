@@ -310,7 +310,7 @@ If you have any questions and commissions for me, feel free to tell me.
 
 - v1.2.3 (October 31, 2019)
 
-  1. An option for inputting the directory to save the downloaded files was added.
+  1. An option for inputting the directory to save the downloaded files was added. When this option is not used, the files are saved to the current working directory.
      - `$ goodls -u [URL] -d [directory]`
 
 [TOP](#top)
