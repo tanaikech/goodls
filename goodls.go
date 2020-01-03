@@ -289,6 +289,10 @@ func (p *para) download(url string) error {
 
 // handler : Initialize of "para".
 func handler(c *cli.Context) error {
+
+	fmt.Println(c.String("url"))
+	os.Exit(0)
+
 	var err error
 	workdir := c.String("directory")
 	if workdir == "" {
@@ -365,49 +369,60 @@ func createHelp() *cli.App {
 	a.Version = "1.2.4"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
-			Name:  "url, u",
-			Usage: "URL of shared file on Google Drive. This is a required parameter.",
+			Name:    "url, u",
+			Aliases: []string{"u"},
+			Usage:   "URL of shared file on Google Drive. This is a required parameter.",
 		},
 		&cli.StringFlag{
-			Name:  "extension, e",
-			Usage: "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
-			Value: "pdf",
+			Name:    "extension, e",
+			Aliases: []string{"e"},
+			Usage:   "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
+			Value:   "pdf",
 		},
 		&cli.StringFlag{
-			Name:  "filename, f",
-			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+			Name:    "filename, f",
+			Aliases: []string{"f"},
+			Usage:   "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
 		},
 		&cli.StringFlag{
-			Name:  "mimetype, m",
-			Usage: "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
+			Name:    "mimetype, m",
+			Aliases: []string{"m"},
+			Usage:   "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
 		},
 		&cli.StringFlag{
-			Name:  "resumabledownload, r",
-			Usage: "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
+			Name:    "resumabledownload, r",
+			Aliases: []string{"r"},
+			Usage:   "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
 		},
 		&cli.BoolFlag{
-			Name:  "NoProgress, np",
-			Usage: "When this option is used, the progression is not shown.",
+			Name:    "NoProgress, np",
+			Aliases: []string{"np"},
+			Usage:   "When this option is used, the progression is not shown.",
 		},
 		&cli.BoolFlag{
-			Name:  "overwrite, o",
-			Usage: "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
+			Name:    "overwrite, o",
+			Aliases: []string{"o"},
+			Usage:   "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
 		},
 		&cli.BoolFlag{
-			Name:  "skip, s",
-			Usage: "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
+			Name:    "skip, s",
+			Aliases: []string{"s"},
+			Usage:   "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
 		},
 		&cli.BoolFlag{
-			Name:  "fileinf, i",
-			Usage: "Retrieve file information. API key is required.",
+			Name:    "fileinf, i",
+			Aliases: []string{"i"},
+			Usage:   "Retrieve file information. API key is required.",
 		},
 		&cli.StringFlag{
-			Name:  "apikey, key",
-			Usage: "API key is uded to retrieve file list from shared folder and file information.",
+			Name:    "apikey, key",
+			Aliases: []string{"key"},
+			Usage:   "API key is uded to retrieve file list from shared folder and file information.",
 		},
 		&cli.StringFlag{
-			Name:  "directory, d",
-			Usage: "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
+			Name:    "directory, d",
+			Aliases: []string{"d"},
+			Usage:   "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
 		},
 	}
 	return a
