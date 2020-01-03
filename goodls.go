@@ -358,53 +358,54 @@ func handler(c *cli.Context) error {
 func createHelp() *cli.App {
 	a := cli.NewApp()
 	a.Name = appname
-	a.Author = "tanaike [ https://github.com/tanaikech/" + appname + " ] "
-	a.Email = "tanaike@hotmail.com"
-	a.Usage = "Download shared files on Google Drive."
-	a.Version = "1.2.3"
+	a.Authors = []*cli.Author{
+		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
+	}
+	a.UsageText = "Download shared files on Google Drive."
+	a.Version = "1.2.4"
 	a.Flags = []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "url, u",
 			Usage: "URL of shared file on Google Drive. This is a required parameter.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "extension, e",
 			Usage: "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
 			Value: "pdf",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "filename, f",
 			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "mimetype, m",
 			Usage: "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "resumabledownload, r",
 			Usage: "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "NoProgress, np",
 			Usage: "When this option is used, the progression is not shown.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "overwrite, o",
 			Usage: "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "skip, s",
 			Usage: "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "fileinf, i",
 			Usage: "Retrieve file information. API key is required.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "apikey, key",
 			Usage: "API key is uded to retrieve file list from shared folder and file information.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "directory, d",
 			Usage: "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
 		},

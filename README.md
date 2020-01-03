@@ -313,4 +313,10 @@ If you have any questions and commissions for me, feel free to tell me.
   1. An option for inputting the directory to save the downloaded files was added. When this option is not used, the files are saved to the current working directory.
      - `$ goodls -u [URL] -d [directory]`
 
+<a name="v124"></a>
+
+- v1.2.4 (January 3, 2020)
+
+  1. It seems that the specification of `github.com/urfave/cli` was changed by the update of [https://github.com/urfave/cli](https://github.com/urfave/cli). By this, when `go get -u github.com/tanaikech/goodls` is run, an error occurred. So I modified the script.
+
 [TOP](#top)
