@@ -289,10 +289,6 @@ func (p *para) download(url string) error {
 
 // handler : Initialize of "para".
 func handler(c *cli.Context) error {
-
-	fmt.Println(c.String("url"))
-	os.Exit(0)
-
 	var err error
 	workdir := c.String("directory")
 	if workdir == "" {
