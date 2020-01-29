@@ -319,4 +319,13 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. It seems that the specification of `github.com/urfave/cli` was changed by the update of [https://github.com/urfave/cli](https://github.com/urfave/cli). By this, when `go get -u github.com/tanaikech/goodls` is run, an error occurred. So this error was removed.
 
+<a name="v125"></a>
+
+- v1.2.5 (January 29, 2020)
+
+  1. An option for selecting whether the top directory is created was added.
+     - `$ goodls -u [URL] --notcreatetopdirectory` or `$ goodls -u [URL] -ntd`
+     - When this option is NOT used (default situation), when a folder including sub-folders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and sub-folders under the top folder are downloaded under the working directory.
+     - [This feature request](https://github.com/tanaikech/goodls/issues/8) was implemented.
+
 [TOP](#top)

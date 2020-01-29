@@ -34,6 +34,5 @@ If you use API key, you can download all files in a shared folder.
 
 $ goodls -u [URL of shared folder on Google Drive] -key [API key]
 
----------------------------------------------------------------
-*/
+---------------------------------------------------------------*/
 package main

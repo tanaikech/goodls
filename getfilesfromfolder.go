@@ -167,12 +167,17 @@ func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
 	}
 	for _, e := range fileList.FileList {
 		path := p.WorkDir
+		if p.Notcreatetopdirectory {
+			e.FolderTree = append(e.FolderTree[:0], e.FolderTree[1:]...)
+		}
 		for _, dir := range e.FolderTree {
 			path = filepath.Join(path, idToName[dir].(string))
 		}
-		err = p.makeDirByCondition(path)
-		if err != nil {
-			return err
+		if path != p.WorkDir {
+			err = p.makeDirByCondition(path)
+			if err != nil {
+				return err
+			}
 		}
 		for _, file := range e.Files {
 			if file.MimeType != "application/vnd.google-apps.script" {

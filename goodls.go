@@ -37,26 +37,27 @@ type chunks struct {
 
 // para : Structure for each parameter
 type para struct {
-	APIKey            string
-	Client            *http.Client
-	Code              string
-	ContentType       string
-	Disp              bool
-	DlFolder          bool
-	DownloadBytes     int64
-	Ext               string
-	Filename          string
-	ID                string
-	InputtedMimeType  []string
-	Kind              string
-	OverWrite         bool
-	Resumabledownload string
-	SearchID          string
-	ShowFileInf       bool
-	Size              int64
-	Skip              bool
-	URL               string
-	WorkDir           string
+	APIKey                string
+	Client                *http.Client
+	Code                  string
+	ContentType           string
+	Disp                  bool
+	DlFolder              bool
+	DownloadBytes         int64
+	Ext                   string
+	Filename              string
+	ID                    string
+	InputtedMimeType      []string
+	Kind                  string
+	Notcreatetopdirectory bool
+	OverWrite             bool
+	Resumabledownload     string
+	SearchID              string
+	ShowFileInf           bool
+	Size                  int64
+	Skip                  bool
+	URL                   string
+	WorkDir               string
 }
 
 // Read : For io.Reader
@@ -281,10 +282,8 @@ func (p *para) download(url string) error {
 			}
 			return p.downloadLargeFile()
 		}
-	} else {
-		return fmt.Errorf("file ID [ %s ] cannot be downloaded as [ %s ]", p.ID, p.Ext)
 	}
-	return nil
+	return fmt.Errorf("file ID [ %s ] cannot be downloaded as [ %s ]", p.ID, p.Ext)
 }
 
 // handler : Initialize of "para".
@@ -314,6 +313,7 @@ func handler(c *cli.Context) error {
 			}
 			return nil
 		}(c.String("mimetype")),
+		Notcreatetopdirectory: c.Bool("notcreatetopdirectory"),
 	}
 	if envv := os.Getenv(envval); c.String("apikey") == "" && envv != "" {
 		p.APIKey = strings.TrimSpace(envv)
@@ -362,7 +362,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "1.2.4"
+	a.Version = "1.2.5"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "url, u",
@@ -413,12 +413,17 @@ func createHelp() *cli.App {
 		&cli.StringFlag{
 			Name:    "apikey, key",
 			Aliases: []string{"key"},
-			Usage:   "API key is uded to retrieve file list from shared folder and file information.",
+			Usage:   "API key is used to retrieve file list from shared folder and file information.",
 		},
 		&cli.StringFlag{
 			Name:    "directory, d",
 			Aliases: []string{"d"},
 			Usage:   "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
+		},
+		&cli.BoolFlag{
+			Name:    "notcreatetopdirectory, ntd",
+			Aliases: []string{"ntd"},
+			Usage:   "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and subfolders under the top folder are downloaded under the working directory.",
 		},
 	}
 	return a
