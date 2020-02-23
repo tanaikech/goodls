@@ -328,4 +328,11 @@ If you have any questions and commissions for me, feel free to tell me.
      - When this option is NOT used (default situation), when a folder including sub-folders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and sub-folders under the top folder are downloaded under the working directory.
      - [This feature request](https://github.com/tanaikech/goodls/issues/8) was implemented.
 
+<a name="v126"></a>
+
+- v1.2.6 (February 23, 2020)
+
+  1. When the files are downloaded from the shared folder, if an error occurs, the download was stopped. In [this thread](https://github.com/tanaikech/goodls/issues/9), a request for skipping this error was proposed. This request was implemented at v1.2.6. Please try the option of `--skiperror` like below.
+     - `$ goodls -u https://drive.google.com/drive/folders/###?usp=sharing --skiperror`
+
 [TOP](#top)

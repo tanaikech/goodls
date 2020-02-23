@@ -56,6 +56,7 @@ type para struct {
 	ShowFileInf           bool
 	Size                  int64
 	Skip                  bool
+	SkipError             bool
 	URL                   string
 	WorkDir               string
 }
@@ -305,6 +306,7 @@ func handler(c *cli.Context) error {
 		Resumabledownload: c.String("resumabledownload"),
 		ShowFileInf:       c.Bool("fileinf"),
 		Skip:              c.Bool("skip"),
+		SkipError:         c.Bool("skiperror"),
 		WorkDir:           workdir,
 		DlFolder:          false,
 		InputtedMimeType: func(mime string) []string {
@@ -362,7 +364,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "1.2.5"
+	a.Version = "1.2.6"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "url, u",
@@ -424,6 +426,11 @@ func createHelp() *cli.App {
 			Name:    "notcreatetopdirectory, ntd",
 			Aliases: []string{"ntd"},
 			Usage:   "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and subfolders under the top folder are downloaded under the working directory.",
+		},
+		&cli.BoolFlag{
+			Name:    "skiperror, se",
+			Aliases: []string{"se"},
+			Usage:   "When the files are downloaded from the folder, if an error occurs, the error is skipped by this option.",
 		},
 	}
 	return a

@@ -84,6 +84,12 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 			return err
 		}
 		defer res.Body.Close()
+		if p.SkipError {
+			fmt.Printf("!! Downloading '%s' (fileId: %s) was skipped by an error. Status code is %d.\n", file.Name, file.Id, res.StatusCode)
+			p.WorkDir = bkWorkDir
+			p.Filename = bkFilename
+			return nil
+		}
 		return fmt.Errorf("%s", r)
 	}
 	p.saveFile(res)
