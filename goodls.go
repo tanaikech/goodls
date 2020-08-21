@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -189,6 +190,7 @@ func (p *para) fetch(url string) (*http.Response, error) {
 func (p *para) checkURL(s string) error {
 	var err error
 	r := regexp.MustCompile(`google\.com\/(\w.+)\/d\/(\w.+)\/`)
+	r2 := regexp.MustCompile(`drive.google.com\/uc\?(export\=\w+|id\=([\w\S]+))&(export\=\w+|id\=([\w\S]+))`)
 	if r.MatchString(s) {
 		res := r.FindAllStringSubmatch(s, -1)
 		p.Kind = res[0][1]
@@ -214,6 +216,21 @@ func (p *para) checkURL(s string) error {
 				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export?format=" + p.Ext
 			}
 		}
+		if p.APIKey != "" && p.ShowFileInf {
+			if err := p.showFileInf(); err != nil {
+				return err
+			}
+			return nil
+		}
+	} else if r2.MatchString(s) {
+		u, err := url.Parse(s)
+		if err != nil {
+			return err
+		}
+		q := u.Query()
+		p.Kind = "file"
+		p.ID = q["id"][0]
+		p.URL = anyurl + "&id=" + p.ID
 		if p.APIKey != "" && p.ShowFileInf {
 			if err := p.showFileInf(); err != nil {
 				return err
@@ -364,7 +381,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "1.2.6"
+	a.Version = "1.2.7"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "url, u",

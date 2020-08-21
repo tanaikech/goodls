@@ -80,6 +80,8 @@ $ goodls -u [URL of shared file on Google Drive]
     - `https://docs.google.com/presentation/d/#####/edit?usp=sharing`
   - In the case of except for Google Docs
     - `https://drive.google.com/file/d/#####/view?usp=sharing`
+  - In the case of webContentLink
+    - `https://drive.google.com/uc?export=download&id=###`
 
 ### File with several URLs
 
@@ -334,5 +336,11 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. When the files are downloaded from the shared folder, if an error occurs, the download was stopped. In [this thread](https://github.com/tanaikech/goodls/issues/9), a request for skipping this error was proposed. This request was implemented at v1.2.6. Please try the option of `--skiperror` like below.
      - `$ goodls -u https://drive.google.com/drive/folders/###?usp=sharing --skiperror`
+
+<a name="v127"></a>
+
+- v1.2.7 (August 21, 2020)
+
+  1. As the URL for downloading the files, `webContentLink` was added. So from this version, the URL of `https://drive.google.com/uc?export=download&id=###` got to be able to be used. This is the request from [this thread](https://github.com/tanaikech/goodls/issues/13).
 
 [TOP](#top)
