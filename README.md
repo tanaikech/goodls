@@ -235,8 +235,12 @@ $ goodls -u https://drive.google.com/drive/folders/abcdefg?usp=sharing -key htjk
 - I want to download **shared projects** from user's Google Drive.
   - You can download **shared projects** using [ggsrun](https://github.com/tanaikech/ggsrun).
   - ggsrun can also download **shared files** from other user's Google Drive using Drive API which needs the access token.
+
 - I want to download all files including the standalone projects from the shared folder and own folder.
   - You can achieve it using [ggsrun](https://github.com/tanaikech/ggsrun).
+
+- I want to use this with "Dockerfile build".
+  - In this case, it has already been mentioned by [rahulpowar](https://github.com/rahulpowar) at [https://github.com/tanaikech/goodls/issues/15](https://github.com/tanaikech/goodls/issues/15). Please check it.
 
 ---
 
