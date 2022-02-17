@@ -187,7 +187,7 @@ func (v *valResumableDownload) chkResumeFile() (bool, bool, error) {
 	if fs == v.DownloadFile.Size {
 		return false, true, nil
 	} else if fs > v.DownloadFile.Size {
-		return false, false, fmt.Errorf("Size of download file is larger than that of local file. Please confirm the file and URL. FileName is %s. Download URL is %s", v.Filename, v.URL)
+		return false, false, fmt.Errorf("size of download file is larger than that of local file. Please confirm the file and URL. FileName is %s. Download URL is %s", v.Filename, v.URL)
 	}
 	v.Start = fs
 	v.End = func() int64 {
@@ -289,7 +289,7 @@ func (v *valResumableDownload) getStatusMsg(fc, end bool) string {
 		}
 		return getMsg(setIndent(st, 0), " : ")
 	default:
-		return fmt.Sprintf("Unknown error.")
+		return fmt.Sprintf("unknown error")
 	}
 }
 
@@ -305,7 +305,7 @@ func (p *para) resumableDownload() error {
 		return err
 	}
 	if strings.Contains(v.DownloadFile.MimeType, "application/vnd.google-apps") {
-		return fmt.Errorf("Google Docs cannot be resumable downloaded")
+		return fmt.Errorf("a Google Docs file cannot be resumable downloaded")
 	}
 	fc, end, err := v.chkResumeFile()
 	if err != nil {

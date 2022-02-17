@@ -233,10 +233,12 @@ $ goodls -u https://drive.google.com/drive/folders/abcdefg?usp=sharing -key htjk
 # Q&A
 
 - I want to download **shared projects** from user's Google Drive.
+
   - You can download **shared projects** using [ggsrun](https://github.com/tanaikech/ggsrun).
   - ggsrun can also download **shared files** from other user's Google Drive using Drive API which needs the access token.
 
 - I want to download all files including the standalone projects from the shared folder and own folder.
+
   - You can achieve it using [ggsrun](https://github.com/tanaikech/ggsrun).
 
 - I want to use this with "Dockerfile build".
@@ -346,5 +348,11 @@ If you have any questions and commissions for me, feel free to tell me.
 - v1.2.7 (August 21, 2020)
 
   1. As the URL for downloading the files, `webContentLink` was added. So from this version, the URL of `https://drive.google.com/uc?export=download&id=###` got to be able to be used. This is the request from [this thread](https://github.com/tanaikech/goodls/issues/13).
+
+<a name="v128"></a>
+
+- v1.2.8 (February 17, 2022)
+
+  1. Recently, it seems that the specification of this flow has been changed. So I updated goodls for reflecting this upload. So, the usage of goodls is not changed.
 
 [TOP](#top)

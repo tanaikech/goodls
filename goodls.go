@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
@@ -80,7 +81,6 @@ func (c *chunks) Read(dat []byte) (int, error) {
 func (p *para) saveFile(res *http.Response) error {
 	var err error
 	p.ContentType = res.Header["Content-Type"][0]
-	err = p.getFilename(res)
 	if err = p.getFilename(res); err != nil {
 		return err
 	}
@@ -134,7 +134,13 @@ func (p *para) getFilename(s *http.Response) error {
 			p.Filename = para["filename"]
 		}
 	} else {
-		return fmt.Errorf("file ID [ %s ] is not shared, while the file is existing", p.ID)
+		body, _ := ioutil.ReadAll(s.Body)
+		rFilename := regexp.MustCompile(`<span class="uc-name-size"><a[\w\s\S]+?>([\w\s\S]+?)<\/a>`)
+		matches := rFilename.FindAllStringSubmatch(string(body), -1)
+		if len(matches) == 0 {
+			return fmt.Errorf("file ID [ %s ] cannot be downloaded", p.ID)
+		}
+		p.Filename = matches[0][1]
 	}
 	return nil
 }
@@ -159,18 +165,16 @@ func (p *para) downloadLargeFile() error {
 	return p.saveFile(res)
 }
 
-// checkCookie : When a large size of file is downloaded, a code for downloading is retrieved at here.
-func (p *para) checkCookie(rawCookies string) {
-	header := http.Header{}
-	header.Add("Cookie", rawCookies)
-	request := http.Request{Header: header}
-	for _, e := range request.Cookies() {
-		if strings.Contains(e.Name, "download_warning_") {
-			cookie, _ := request.Cookie(e.Name)
-			p.Code = cookie.Value
-			break
-		}
+// getDownloadCode : When a large size of file is downloaded, a code for downloading is retrieved at here.
+func (p *para) getDownloadCode(res *http.Response) error {
+	body, _ := ioutil.ReadAll(res.Body)
+	rFilename := regexp.MustCompile(`confirm\=([\w\s\S]+?)"`)
+	matches := rFilename.FindAllStringSubmatch(string(body), -1)
+	if len(matches) == 0 {
+		return fmt.Errorf("file ID [ %s ] cannot be downloaded", p.ID)
 	}
+	p.Code = matches[0][1]
+	return nil
 }
 
 // fetch : Fetch data from Google Drive
@@ -268,7 +272,7 @@ func (p *para) download(url string) error {
 	if p.APIKey != "" && p.ShowFileInf {
 		return nil
 	} else if p.APIKey == "" && p.ShowFileInf {
-		return errors.New("When you want to use the option '--fileinf', please use API key")
+		return errors.New("when you want to use the option '--fileinf', please use API key")
 	} else if p.APIKey != "" && p.DlFolder {
 		return nil
 	}
@@ -281,11 +285,17 @@ func (p *para) download(url string) error {
 	if err != nil {
 		return err
 	}
+
 	if res.StatusCode == 200 {
-		if len(res.Header["Set-Cookie"]) == 0 {
+		// For a small file.
+		// After February, 2022, "Content-Disposition" is not included in the response header for a large file.
+		_, chk := res.Header["Content-Disposition"]
+		if chk {
 			return p.saveFile(res)
 		}
-		p.checkCookie(res.Header["Set-Cookie"][0])
+		if err := p.getDownloadCode(res); err != nil {
+			return err
+		}
 		if len(p.Code) == 0 && p.Kind == "file" {
 			return fmt.Errorf("file ID [ %s ] is not shared, while the file is existing", p.ID)
 		} else if len(p.Code) == 0 && p.Kind != "file" {
@@ -360,7 +370,7 @@ func handler(c *cli.Context) error {
 			return scanner.Err()
 		}
 		if len(urls) == 0 {
-			return fmt.Errorf("No URL data. Please check help\n\n $ %s --help", appname)
+			return fmt.Errorf("no URL data. Please check help\n\n $ %s --help", appname)
 		}
 		for _, url := range urls {
 			err = p.download(url)
@@ -381,7 +391,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "1.2.7"
+	a.Version = "1.2.8"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "url, u",
