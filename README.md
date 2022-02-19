@@ -353,6 +353,6 @@ If you have any questions and commissions for me, feel free to tell me.
 
 - v1.2.8 (February 17, 2022)
 
-  1. Recently, it seems that the specification of this flow has been changed. So I updated goodls for reflecting this upload. So, the usage of goodls is not changed.
+  1. Recently, it seems that the specification the process for downloading the shared file on Google Drive has been changed. So I updated goodls for reflecting this. The usage of goodls is not changed.
 
 [TOP](#top)
