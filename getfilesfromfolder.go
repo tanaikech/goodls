@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -17,7 +18,7 @@ import (
 
 	getfilelist "github.com/tanaikech/go-getfilelist"
 	drive "google.golang.org/api/drive/v3"
-	"google.golang.org/api/googleapi/transport"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -29,14 +30,6 @@ func mime2ext(mime string) string {
 	var obj map[string]interface{}
 	json.Unmarshal([]byte(mimeVsEx), &obj)
 	res, _ := obj[mime].(string)
-	return res
-}
-
-// ext2mime : Convert extension to mimeType.
-func ext2mime(ext string) string {
-	var obj map[string]interface{}
-	json.Unmarshal([]byte(extVsmime), &obj)
-	res, _ := obj[ext].(string)
 	return res
 }
 
@@ -280,14 +273,15 @@ func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 
 // getFilesFromFolder: This method is the main method for downloading all files in a shread folder.
 func (p *para) getFilesFromFolder() error {
-	client := &http.Client{
-		Transport: &transport.APIKey{Key: p.APIKey},
+	srv, err := drive.NewService(context.Background(), option.WithAPIKey(p.APIKey))
+	if err != nil {
+		return err
 	}
 	fileList, err := func() (*getfilelist.FileListDl, error) {
 		if len(p.InputtedMimeType) > 0 {
-			return getfilelist.Folder(p.SearchID).MimeType(p.InputtedMimeType).Do(client)
+			return getfilelist.Folder(p.SearchID).MimeType(p.InputtedMimeType).Do(srv)
 		}
-		return getfilelist.Folder(p.SearchID).Do(client)
+		return getfilelist.Folder(p.SearchID).Do(srv)
 	}()
 	if err != nil {
 		return err

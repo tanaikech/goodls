@@ -18,7 +18,7 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 
 	"github.com/urfave/cli"
 )
@@ -287,7 +287,6 @@ func (p *para) download(url string) error {
 	}
 
 	if res.StatusCode == 200 {
-		// For a small file.
 		// After February, 2022, "Content-Disposition" is not included in the response header for a large file.
 		_, chk := res.Header["Content-Disposition"]
 		if chk {
@@ -347,7 +346,7 @@ func handler(c *cli.Context) error {
 	if envv := os.Getenv(envval); c.String("apikey") == "" && envv != "" {
 		p.APIKey = strings.TrimSpace(envv)
 	}
-	if terminal.IsTerminal(int(syscall.Stdin)) {
+	if term.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
 			createHelp().Run(os.Args)
 			return nil
@@ -387,77 +386,64 @@ func handler(c *cli.Context) error {
 func createHelp() *cli.App {
 	a := cli.NewApp()
 	a.Name = appname
-	a.Authors = []*cli.Author{
+	a.Authors = []cli.Author{
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "1.2.8"
+	a.Version = "2.0.0"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
-			Name:    "url, u",
-			Aliases: []string{"u"},
-			Usage:   "URL of shared file on Google Drive. This is a required parameter.",
+			Name:  "url, u",
+			Usage: "URL of shared file on Google Drive. This is a required parameter.",
 		},
 		&cli.StringFlag{
-			Name:    "extension, e",
-			Aliases: []string{"e"},
-			Usage:   "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
-			Value:   "pdf",
+			Name:  "extension, e",
+			Usage: "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
+			Value: "pdf",
 		},
 		&cli.StringFlag{
-			Name:    "filename, f",
-			Aliases: []string{"f"},
-			Usage:   "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+			Name:  "filename, f",
+			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
 		},
 		&cli.StringFlag{
-			Name:    "mimetype, m",
-			Aliases: []string{"m"},
-			Usage:   "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
+			Name:  "mimetype, m",
+			Usage: "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
 		},
 		&cli.StringFlag{
-			Name:    "resumabledownload, r",
-			Aliases: []string{"r"},
-			Usage:   "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
+			Name:  "resumabledownload, r",
+			Usage: "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
 		},
 		&cli.BoolFlag{
-			Name:    "NoProgress, np",
-			Aliases: []string{"np"},
-			Usage:   "When this option is used, the progression is not shown.",
+			Name:  "NoProgress, np",
+			Usage: "When this option is used, the progression is not shown.",
 		},
 		&cli.BoolFlag{
-			Name:    "overwrite, o",
-			Aliases: []string{"o"},
-			Usage:   "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
+			Name:  "overwrite, o",
+			Usage: "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
 		},
 		&cli.BoolFlag{
-			Name:    "skip, s",
-			Aliases: []string{"s"},
-			Usage:   "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
+			Name:  "skip, s",
+			Usage: "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
 		},
 		&cli.BoolFlag{
-			Name:    "fileinf, i",
-			Aliases: []string{"i"},
-			Usage:   "Retrieve file information. API key is required.",
+			Name:  "fileinf, i",
+			Usage: "Retrieve file information. API key is required.",
 		},
 		&cli.StringFlag{
-			Name:    "apikey, key",
-			Aliases: []string{"key"},
-			Usage:   "API key is used to retrieve file list from shared folder and file information.",
+			Name:  "apikey, key",
+			Usage: "API key is used to retrieve file list from shared folder and file information.",
 		},
 		&cli.StringFlag{
-			Name:    "directory, d",
-			Aliases: []string{"d"},
-			Usage:   "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
+			Name:  "directory, d",
+			Usage: "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
 		},
 		&cli.BoolFlag{
-			Name:    "notcreatetopdirectory, ntd",
-			Aliases: []string{"ntd"},
-			Usage:   "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and subfolders under the top folder are downloaded under the working directory.",
+			Name:  "notcreatetopdirectory, ntd",
+			Usage: "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and subfolders under the top folder are downloaded under the working directory.",
 		},
 		&cli.BoolFlag{
-			Name:    "skiperror, se",
-			Aliases: []string{"se"},
-			Usage:   "When the files are downloaded from the folder, if an error occurs, the error is skipped by this option.",
+			Name:  "skiperror, se",
+			Usage: "When the files are downloaded from the folder, if an error occurs, the error is skipped by this option.",
 		},
 	}
 	return a

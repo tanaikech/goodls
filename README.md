@@ -39,8 +39,10 @@ or
 Use go get.
 
 ```bash
-$ go get -u github.com/tanaikech/goodls
+$ go install github.com/tanaikech/goodls@latest
 ```
+
+- `GO111MODULE=on`
 
 # Usage
 
@@ -354,5 +356,11 @@ If you have any questions and commissions for me, feel free to tell me.
 - v1.2.8 (February 17, 2022)
 
   1. Recently, it seems that the specification the process for downloading the shared file on Google Drive has been changed. So I updated goodls for reflecting this. The usage of goodls is not changed.
+
+<a name="v130"></a>
+
+- v2.0.0 (February 25, 2022)
+
+  1. By changing the specification of methods, `drive.New()` and `transport.APIKey` were deprecated. By this, I updated [go-getfilelist](https://github.com/tanaikech/go-getfilelist). In this version, I used this updated library to goodls. And also, `drive.NewService()` is used instead of `drive.New()`.
 
 [TOP](#top)
