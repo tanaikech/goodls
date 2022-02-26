@@ -357,10 +357,16 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. Recently, it seems that the specification the process for downloading the shared file on Google Drive has been changed. So I updated goodls for reflecting this. The usage of goodls is not changed.
 
-<a name="v130"></a>
+<a name="v200"></a>
 
 - v2.0.0 (February 25, 2022)
 
   1. By changing the specification of methods, `drive.New()` and `transport.APIKey` were deprecated. By this, I updated [go-getfilelist](https://github.com/tanaikech/go-getfilelist). In this version, I used this updated library to goodls. And also, `drive.NewService()` is used instead of `drive.New()`.
+
+<a name="v201"></a>
+
+- v2.0.1 (February 26, 2022)
+
+  1. A bug for the resumable download was removed.
 
 [TOP](#top)

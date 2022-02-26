@@ -114,6 +114,7 @@ func (v *valResumableDownload) resDownloadFileByAPIKey() (*http.Response, error)
 	u.Path = path.Join(u.Path, v.DownloadFile.Id)
 	q := u.Query()
 	q.Set("alt", "media")
+	q.Set("key", v.APIKey)
 	u.RawQuery = q.Encode()
 	timeOut := func(size int64) int64 {
 		if size == 0 {
