@@ -369,4 +369,10 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. A bug for the resumable download was removed.
 
+<a name="v202"></a>
+
+- v2.0.2 (February 24, 2023)
+
+  1. Modified go.mod and go.sum.
+
 [TOP](#top)
