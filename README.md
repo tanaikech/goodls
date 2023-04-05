@@ -375,4 +375,8 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. Modified go.mod and go.sum.
 
+- v2.0.3 (April 5, 2023)
+
+  1. Forgot updating version number and modified it.
+
 [TOP](#top)
