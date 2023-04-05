@@ -376,6 +376,6 @@ If you have any questions and commissions for me, feel free to tell me.
 
 - v2.0.3 (April 5, 2023)
 
-  1. Forgot updating version number and modified it.
+  1. Forgot to update the version number and modified it. And, built the sources with the latest version. [Ref](https://github.com/tanaikech/goodls/releases/tag/v2.0.3)
 
 [TOP](#top)
