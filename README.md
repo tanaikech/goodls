@@ -374,8 +374,39 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. Modified go.mod and go.sum.
 
+<a name="v203"></a>
+
 - v2.0.3 (April 5, 2023)
 
   1. Forgot to update the version number and modified it. And, built the sources with the latest version. [Ref](https://github.com/tanaikech/goodls/releases/tag/v2.0.3)
+
+<a name="v204"></a>
+
+- v2.0.4 (March 9, 2023)
+
+  1. From January 2024, it seems that the specification of the process for downloading a large shared file on Google Drive has been changed. So I updated goodls to reflect this. The usage of goodls has not changed. In the current stage, when a large share file is downloaded, it is required to click the following button.
+
+  ```html
+  <form
+    id="download-form"
+    action="https://drive.usercontent.google.com/download"
+    method="get"
+  >
+    <input
+      type="submit"
+      id="uc-download-link"
+      class="goog-inline-block jfk-button jfk-button-action"
+      value="このままダウンロード"
+    />
+    <input type="hidden" name="id" value="fileId" />
+    <input type="hidden" name="export" value="download" />
+    <input type="hidden" name="authuser" value="0" />
+    <input type="hidden" name="confirm" value="t" />
+    <input type="hidden" name="uuid" value="uuId" />
+    <input type="hidden" name="at" value="some value" />
+  </form>
+  ```
+
+  In this version, the URL obtained by this click is created, and the created URL is used for downloading it.
 
 [TOP](#top)

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"log"
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/urfave/cli"
 )
 
@@ -41,7 +42,6 @@ type chunks struct {
 type para struct {
 	APIKey                string
 	Client                *http.Client
-	Code                  string
 	ContentType           string
 	Disp                  bool
 	DlFolder              bool
@@ -61,6 +61,38 @@ type para struct {
 	SkipError             bool
 	URL                   string
 	WorkDir               string
+	URLForLargeFile       string
+}
+
+// getURLFromHTML : Get the download URL from HTML. This is used from January 2024.
+func (p *para) getURLFromHTML(html *http.Response) error {
+	br := html.Body
+	doc, err := goquery.NewDocumentFromReader(br)
+	if err != nil {
+		return err
+	}
+	form := doc.Find("form[id='download-form']")
+	url, b := form.Attr("action")
+	if b == false {
+		log.Print("Specification of the endpoint for downloading the file might have been changed.")
+		return fmt.Errorf("Specification of the endpoint for downloading the file might have been changed.")
+	}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	q := req.URL.Query()
+	form.Find("input").Each(func(i int, s *goquery.Selection) {
+		t, b := s.Attr("type")
+		if t == "hidden" && b == true {
+			name, _ := s.Attr("name")
+			value, _ := s.Attr("value")
+			q.Add(name, value)
+		}
+	})
+	req.URL.RawQuery = q.Encode()
+	p.URLForLargeFile = req.URL.String()
+	return nil
 }
 
 // Read : For io.Reader
@@ -134,7 +166,7 @@ func (p *para) getFilename(s *http.Response) error {
 			p.Filename = para["filename"]
 		}
 	} else {
-		body, _ := ioutil.ReadAll(s.Body)
+		body, _ := io.ReadAll(s.Body)
 		rFilename := regexp.MustCompile(`<span class="uc-name-size"><a[\w\s\S]+?>([\w\s\S]+?)<\/a>`)
 		matches := rFilename.FindAllStringSubmatch(string(body), -1)
 		if len(matches) == 0 {
@@ -155,7 +187,7 @@ func (p *para) downloadLargeFile() error {
 		}
 		p.Size = dlfile.Size
 	}
-	res, err := p.fetch(p.URL + "&confirm=" + p.Code)
+	res, err := p.fetch(p.URLForLargeFile)
 	if err != nil {
 		return err
 	}
@@ -163,18 +195,6 @@ func (p *para) downloadLargeFile() error {
 		return fmt.Errorf("error: This error occurs when it downloads a large file of Google Docs.\nMessage: %+v", res)
 	}
 	return p.saveFile(res)
-}
-
-// getDownloadCode : When a large size of file is downloaded, a code for downloading is retrieved at here.
-func (p *para) getDownloadCode(res *http.Response) error {
-	body, _ := ioutil.ReadAll(res.Body)
-	rFilename := regexp.MustCompile(`confirm\=([\w\s\S]+?)"`)
-	matches := rFilename.FindAllStringSubmatch(string(body), -1)
-	if len(matches) == 0 {
-		return fmt.Errorf("file ID [ %s ] cannot be downloaded", p.ID)
-	}
-	p.Code = matches[0][1]
-	return nil
 }
 
 // fetch : Fetch data from Google Drive
@@ -285,19 +305,18 @@ func (p *para) download(url string) error {
 	if err != nil {
 		return err
 	}
-
 	if res.StatusCode == 200 {
 		// After February, 2022, "Content-Disposition" is not included in the response header for a large file.
 		_, chk := res.Header["Content-Disposition"]
 		if chk {
 			return p.saveFile(res)
 		}
-		if err := p.getDownloadCode(res); err != nil {
+		if err := p.getURLFromHTML(res); err != nil {
 			return err
 		}
-		if len(p.Code) == 0 && p.Kind == "file" {
+		if len(p.URLForLargeFile) == 0 && p.Kind == "file" {
 			return fmt.Errorf("file ID [ %s ] is not shared, while the file is existing", p.ID)
-		} else if len(p.Code) == 0 && p.Kind != "file" {
+		} else if len(p.URLForLargeFile) == 0 && p.Kind != "file" {
 			return p.saveFile(res)
 		} else {
 			if p.APIKey != "" && p.Resumabledownload != "" {
@@ -390,7 +409,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "2.0.3"
+	a.Version = "2.0.4"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "url, u",
