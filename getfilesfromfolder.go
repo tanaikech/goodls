@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,6 +47,7 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		q.Set("mimeType", file.WebViewLink)
 	} else {
 		q.Set("alt", "media")
+		q.Set("supportsAllDrives", "true")
 	}
 	u.RawQuery = q.Encode()
 	bkWorkDir := p.WorkDir
@@ -72,7 +73,7 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		return err
 	}
 	if res.StatusCode != 200 {
-		r, err := ioutil.ReadAll(res.Body)
+		r, err := io.ReadAll(res.Body)
 		if err != nil {
 			return err
 		}
@@ -271,7 +272,7 @@ func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 	}
 }
 
-// getFilesFromFolder: This method is the main method for downloading all files in a shread folder.
+// getFilesFromFolder: This method is the main method for downloading all files in a shared folder.
 func (p *para) getFilesFromFolder() error {
 	srv, err := drive.NewService(context.Background(), option.WithAPIKey(p.APIKey))
 	if err != nil {

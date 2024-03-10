@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
@@ -74,7 +73,6 @@ func (p *para) getURLFromHTML(html *http.Response) error {
 	form := doc.Find("form[id='download-form']")
 	url, b := form.Attr("action")
 	if b == false {
-		log.Print("Specification of the endpoint for downloading the file might have been changed.")
 		return fmt.Errorf("Specification of the endpoint for downloading the file might have been changed.")
 	}
 	req, err := http.NewRequest("GET", url, nil)
@@ -240,6 +238,18 @@ func (p *para) checkURL(s string) error {
 				p.URL = docutl + p.Kind + "/d/" + p.ID + "/export?format=" + p.Ext
 			}
 		}
+
+		if p.APIKey != "" && p.Kind == "file" {
+			fmt.Println("Now downloading with API key.")
+			p.URL = "https://www.googleapis.com/drive/v3/files/" + p.ID + "?alt=media&supportsAllDrives=true&key=" + p.APIKey
+			dlfile, err := p.getFileInfFromP()
+			if err != nil {
+				return err
+			}
+			p.Filename = dlfile.Name
+			p.Size = dlfile.Size
+		}
+
 		if p.APIKey != "" && p.ShowFileInf {
 			if err := p.showFileInf(); err != nil {
 				return err
@@ -409,7 +419,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "2.0.4"
+	a.Version = "2.0.5"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "url, u",

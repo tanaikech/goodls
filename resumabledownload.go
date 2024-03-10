@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -138,7 +137,7 @@ func (v *valResumableDownload) resDownloadFileByAPIKey() (*http.Response, error)
 		return nil, err
 	}
 	if res.StatusCode != 206 && res.StatusCode != 200 {
-		r, err := ioutil.ReadAll(res.Body)
+		r, err := io.ReadAll(res.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +154,7 @@ func (v *valResumableDownload) getFileInf() error {
 		return err
 	}
 	fields := []googleapi.Field{"createdTime,id,md5Checksum,mimeType,modifiedTime,name,owners,parents,shared,size,webContentLink,webViewLink"}
-	res, err := srv.Files.Get(v.ID).Fields(fields...).Do()
+	res, err := srv.Files.Get(v.ID).Fields(fields...).SupportsAllDrives(true).Do()
 	if err != nil {
 		return err
 	}
