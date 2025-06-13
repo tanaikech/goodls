@@ -415,4 +415,10 @@ If you have any questions and commissions for me, feel free to tell me.
 
   1. From this version, when the API key is used, the large file is downloaded by the API key. Because the specification for downloading the shared large file is sometimes changed. When the API key is not used, the shared large file is downloaded by the current specification (v2.0.4). If the shared large file cannot be downloaded by the change of the specification on Google's side, please use the API key and test it again. The usage of goodls has not changed.
 
+<a name="v206"></a>
+
+- v2.0.6 (June 13, 2025)
+
+  1. Rebuid by go1.24.4.
+
 [TOP](#top)

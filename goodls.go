@@ -419,7 +419,7 @@ func createHelp() *cli.App {
 		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
 	}
 	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "2.0.5"
+	a.Version = "2.0.6"
 	a.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "url, u",
