@@ -1,9 +1,11 @@
 // Package main (goodls.go) :
 // These methods are for downloading shared files from Google Drive.
+// Refactored to include multi-progress bars, strict concurrency, and robust progress bar lifecycle management.
 package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,12 +17,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 
-	"golang.org/x/term"
-
 	"github.com/PuerkitoBio/goquery"
-	"github.com/urfave/cli"
+	cli "github.com/urfave/cli/v2"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/term"
 )
 
 const (
@@ -29,13 +34,6 @@ const (
 	anyurl  = "https://drive.google.com/uc?export=download"
 	docutl  = "https://docs.google.com/"
 )
-
-// chunks : For io.Reader
-type chunks struct {
-	io.Reader
-	cChunk int64
-	Size   int64
-}
 
 // para : Structure for each parameter
 type para struct {
@@ -61,9 +59,20 @@ type para struct {
 	URL                   string
 	WorkDir               string
 	URLForLargeFile       string
+	Concurrency           int
+
+	Progress    *mpb.Progress
+	ResultJSONs []string
+	mu          sync.Mutex
 }
 
-// getURLFromHTML : Get the download URL from HTML. This is used from January 2024.
+// Clone : Deep copy necessary fields to prevent race conditions during concurrent execution.
+func (p *para) Clone() *para {
+	newP := *p
+	return &newP
+}
+
+// getURLFromHTML : Get the download URL from HTML.
 func (p *para) getURLFromHTML(html *http.Response) error {
 	br := html.Body
 	doc, err := goquery.NewDocumentFromReader(br)
@@ -72,8 +81,8 @@ func (p *para) getURLFromHTML(html *http.Response) error {
 	}
 	form := doc.Find("form[id='download-form']")
 	url, b := form.Attr("action")
-	if b == false {
-		return fmt.Errorf("Specification of the endpoint for downloading the file might have been changed.")
+	if !b {
+		return fmt.Errorf("specification of the endpoint for downloading the file might have been changed")
 	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -82,7 +91,7 @@ func (p *para) getURLFromHTML(html *http.Response) error {
 	q := req.URL.Query()
 	form.Find("input").Each(func(i int, s *goquery.Selection) {
 		t, b := s.Attr("type")
-		if t == "hidden" && b == true {
+		if t == "hidden" && b {
 			name, _ := s.Attr("name")
 			value, _ := s.Attr("value")
 			q.Add(name, value)
@@ -93,27 +102,19 @@ func (p *para) getURLFromHTML(html *http.Response) error {
 	return nil
 }
 
-// Read : For io.Reader
-func (c *chunks) Read(dat []byte) (int, error) {
-	n, err := c.Reader.Read(dat)
-	c.cChunk += int64(n)
-	if err == nil {
-		if c.Size > 0 {
-			fmt.Printf("\rDownloading (bytes)... %d / %d", c.cChunk, c.Size)
-		} else {
-			fmt.Printf("\rDownloading (bytes)... %d", c.cChunk)
-		}
-	}
-	return n, err
-}
-
-// saveFile : Save retrieved data as a file.
+// saveFile : Save retrieved data as a file with progress bar integration.
 func (p *para) saveFile(res *http.Response) error {
+	// Ensure the HTTP response body is always closed
+	defer res.Body.Close()
+
 	var err error
-	p.ContentType = res.Header["Content-Type"][0]
+	if len(res.Header["Content-Type"]) > 0 {
+		p.ContentType = res.Header["Content-Type"][0]
+	}
 	if err = p.getFilename(res); err != nil {
 		return err
 	}
+
 	var file *os.File
 	if p.DownloadBytes == -1 {
 		file, err = os.Create(filepath.Join(p.WorkDir, p.Filename))
@@ -123,45 +124,86 @@ func (p *para) saveFile(res *http.Response) error {
 	if err != nil {
 		return err
 	}
-	if p.Disp {
-		_, err = io.Copy(file, res.Body)
-	} else {
-		if p.APIKey != "" {
-			_, err = io.Copy(file, &chunks{
-				Reader: res.Body,
-				Size:   p.Size,
-			})
+	// Ensure the file descriptor is properly closed when function exits
+	defer file.Close()
+
+	var reader io.Reader = res.Body
+
+	if p.Size <= 0 {
+		p.Size = res.ContentLength
+	}
+
+	var bar *mpb.Bar
+	if !p.Disp && p.Progress != nil {
+		nameDecor := decor.Name(p.Filename, decor.WCSyncSpaceR)
+		if p.Size > 0 {
+			bar = p.Progress.AddBar(p.Size,
+				mpb.PrependDecorators(
+					nameDecor,
+					decor.CountersKibiByte("% .2f / % .2f", decor.WCSyncSpaceR),
+				),
+				mpb.AppendDecorators(
+					decor.EwmaETA(decor.ET_STYLE_GO, 90),
+					decor.Name(" ] "),
+					decor.Percentage(),
+				),
+			)
 		} else {
-			_, err = io.Copy(file, &chunks{Reader: res.Body})
+			// For indeterminate file sizes (e.g. Google Docs exports), use a spinner
+			bar = p.Progress.AddBar(0,
+				mpb.PrependDecorators(
+					nameDecor,
+					decor.CurrentKibiByte("% .2f", decor.WCSyncSpaceR),
+				),
+				mpb.AppendDecorators(
+					decor.OnComplete(decor.Spinner(nil), "Done"),
+				),
+			)
+		}
+		proxy := bar.ProxyReader(res.Body)
+		reader = proxy
+	}
+
+	_, err = io.Copy(file, reader)
+
+	// CRITICAL FIX: Manually enforce progress bar completion or abortion to prevent infinite hanging
+	if bar != nil {
+		if err != nil {
+			bar.Abort(false) // Drop the bar from wait group on failure
+		} else {
+			bar.SetTotal(-1, true) // Force complete status
 		}
 	}
+
 	if err != nil {
 		return err
 	}
+
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return err
 	}
-	if !p.Disp {
-		fmt.Printf("\n")
+
+	resJSON := fmt.Sprintf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
+	p.mu.Lock()
+	p.ResultJSONs = append(p.ResultJSONs, resJSON)
+	if p.Disp {
+		fmt.Println(resJSON)
 	}
-	fmt.Printf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}\n", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
-	defer func() {
-		file.Close()
-		res.Body.Close()
-	}()
+	p.mu.Unlock()
+
 	return nil
 }
 
 // getFilename : Retrieve filename from header.
 func (p *para) getFilename(s *http.Response) error {
 	if len(s.Header["Content-Disposition"]) > 0 {
-		_, para, err := mime.ParseMediaType(s.Header["Content-Disposition"][0])
+		_, paraMap, err := mime.ParseMediaType(s.Header["Content-Disposition"][0])
 		if err != nil {
 			return err
 		}
 		if p.Filename == "" {
-			p.Filename = para["filename"]
+			p.Filename = paraMap["filename"]
 		}
 	} else {
 		body, _ := io.ReadAll(s.Body)
@@ -177,7 +219,6 @@ func (p *para) getFilename(s *http.Response) error {
 
 // downloadLargeFile : When a large size of file is downloaded, this method is used.
 func (p *para) downloadLargeFile() error {
-	fmt.Println("Now downloading.")
 	if p.APIKey != "" {
 		dlfile, err := p.getFileInfFromP()
 		if err != nil {
@@ -240,7 +281,6 @@ func (p *para) checkURL(s string) error {
 		}
 
 		if p.APIKey != "" && p.Kind == "file" {
-			fmt.Println("Now downloading with API key.")
 			p.URL = "https://www.googleapis.com/drive/v3/files/" + p.ID + "?alt=media&supportsAllDrives=true&key=" + p.APIKey
 			dlfile, err := p.getFileInfFromP()
 			if err != nil {
@@ -316,7 +356,6 @@ func (p *para) download(url string) error {
 		return err
 	}
 	if res.StatusCode == 200 {
-		// After February, 2022, "Content-Disposition" is not included in the response header for a large file.
 		_, chk := res.Header["Content-Disposition"]
 		if chk {
 			return p.saveFile(res)
@@ -352,8 +391,13 @@ func handler(c *cli.Context) error {
 			return err
 		}
 	}
+
+	concurrency := c.Int("concurrency")
+	if concurrency <= 0 {
+		concurrency = 5
+	}
+
 	p := &para{
-		APIKey:            c.String("apikey"),
 		Disp:              c.Bool("NoProgress"),
 		DownloadBytes:     -1,
 		Ext:               c.String("extension"),
@@ -364,6 +408,7 @@ func handler(c *cli.Context) error {
 		SkipError:         c.Bool("skiperror"),
 		WorkDir:           workdir,
 		DlFolder:          false,
+		Concurrency:       concurrency,
 		InputtedMimeType: func(mime string) []string {
 			if mime != "" {
 				return regexp.MustCompile(`\s*,\s*`).Split(mime, -1)
@@ -372,12 +417,46 @@ func handler(c *cli.Context) error {
 		}(c.String("mimetype")),
 		Notcreatetopdirectory: c.Bool("notcreatetopdirectory"),
 	}
-	if envv := os.Getenv(envval); c.String("apikey") == "" && envv != "" {
-		p.APIKey = strings.TrimSpace(envv)
+
+	ignoreAPIKey := c.Bool("no-apikey")
+	rawKey := c.String("apikey")
+	envv := os.Getenv(envval)
+	var apiKeySource string
+
+	if ignoreAPIKey {
+		p.APIKey = ""
+		fmt.Fprintf(os.Stderr, "[*] API Key Explicitly Ignored via --no-apikey flag. Running in anonymous access mode.\n")
+	} else {
+		if rawKey != "" {
+			p.APIKey = strings.TrimSpace(rawKey)
+			apiKeySource = "CLI Flag (--apikey / --key)"
+		} else if envv != "" && strings.TrimSpace(envv) != "" {
+			p.APIKey = strings.TrimSpace(envv)
+			apiKeySource = fmt.Sprintf("Environment Variable (%s)", envval)
+		}
+
+		if p.APIKey != "" {
+			maskedKey := p.APIKey
+			if len(maskedKey) > 8 {
+				maskedKey = maskedKey[:4] + strings.Repeat("*", len(maskedKey)-8) + maskedKey[len(maskedKey)-4:]
+			} else {
+				maskedKey = strings.Repeat("*", len(maskedKey))
+			}
+			fmt.Fprintf(os.Stderr, "[*] API Key Detected\n")
+			fmt.Fprintf(os.Stderr, "    - Source: %s\n", apiKeySource)
+			fmt.Fprintf(os.Stderr, "    - Key   : %s\n", maskedKey)
+		} else {
+			fmt.Fprintf(os.Stderr, "[*] No API Key provided. Running in anonymous access mode.\n")
+		}
 	}
+
+	if !p.Disp {
+		p.Progress = mpb.New(mpb.WithWidth(60))
+	}
+
 	if term.IsTerminal(int(syscall.Stdin)) {
 		if c.String("url") == "" {
-			createHelp().Run(os.Args)
+			cli.ShowAppHelp(c)
 			return nil
 		}
 		p.Filename = c.String("filename")
@@ -389,10 +468,11 @@ func handler(c *cli.Context) error {
 		var urls []string
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
-			if scanner.Text() == "end" {
+			text := scanner.Text()
+			if text == "end" {
 				break
 			}
-			urls = append(urls, scanner.Text())
+			urls = append(urls, text)
 		}
 		if scanner.Err() != nil {
 			return scanner.Err()
@@ -400,90 +480,135 @@ func handler(c *cli.Context) error {
 		if len(urls) == 0 {
 			return fmt.Errorf("no URL data. Please check help\n\n $ %s --help", appname)
 		}
-		for _, url := range urls {
-			err = p.download(url)
-			if err != nil {
-				fmt.Printf("## Skipped: Error: %v", err)
+
+		sem := make(chan struct{}, p.Concurrency)
+		eg, _ := errgroup.WithContext(context.Background())
+		for _, u := range urls {
+			u := u
+			eg.Go(func() error {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				workerP := p.Clone()
+				workerP.Filename = ""
+				err := workerP.download(u)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "## Skipped: Error: %v\n", err)
+				}
+				return nil
+			})
+		}
+		eg.Wait()
+	}
+
+	// This Wait() will no longer block infinitely because SetTotal(-1, true) is strictly called
+	if p.Progress != nil {
+		p.Progress.Wait()
+		if !p.Disp {
+			for _, jsonRes := range p.ResultJSONs {
+				fmt.Println(jsonRes)
 			}
-			p.Filename = ""
 		}
 	}
+
 	return nil
 }
 
-// createHelp : Create help document.
+// createHelp : Create help document using cli v2.
 func createHelp() *cli.App {
-	a := cli.NewApp()
-	a.Name = appname
-	a.Authors = []cli.Author{
-		{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"},
+	app := &cli.App{
+		Name:    appname,
+		Authors: []*cli.Author{{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"}},
+		Usage:   "Download shared files on Google Drive.",
+		Version: "3.2.2", // Bumped version for progress bar completion fix
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "url",
+				Aliases: []string{"u"},
+				Usage:   "URL of shared file on Google Drive. This is a required parameter.",
+			},
+			&cli.StringFlag{
+				Name:    "extension",
+				Aliases: []string{"e"},
+				Usage:   "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
+				Value:   "pdf",
+			},
+			&cli.StringFlag{
+				Name:    "filename",
+				Aliases: []string{"f"},
+				Usage:   "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
+			},
+			&cli.StringFlag{
+				Name:    "mimetype",
+				Aliases: []string{"m"},
+				Usage:   "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
+			},
+			&cli.StringFlag{
+				Name:    "resumabledownload",
+				Aliases: []string{"r"},
+				Usage:   "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
+			},
+			&cli.BoolFlag{
+				Name:    "NoProgress",
+				Aliases: []string{"np"},
+				Usage:   "When this option is used, the progression is not shown.",
+			},
+			&cli.BoolFlag{
+				Name:    "overwrite",
+				Aliases: []string{"o"},
+				Usage:   "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
+			},
+			&cli.BoolFlag{
+				Name:    "skip",
+				Aliases: []string{"s"},
+				Usage:   "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
+			},
+			&cli.BoolFlag{
+				Name:    "fileinf",
+				Aliases: []string{"i"},
+				Usage:   "Retrieve file information. API key is required.",
+			},
+			&cli.StringFlag{
+				Name:    "apikey",
+				Aliases: []string{"key"},
+				Usage:   "API key is used to retrieve file list from shared folder and file information.",
+			},
+			&cli.BoolFlag{
+				Name:    "no-apikey",
+				Aliases: []string{"nk"},
+				Usage:   "Explicitly ignore the API key even if it is set via environment variable or flag. Forces anonymous access mode.",
+			},
+			&cli.StringFlag{
+				Name:    "directory",
+				Aliases: []string{"d"},
+				Usage:   "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
+			},
+			&cli.BoolFlag{
+				Name:    "notcreatetopdirectory",
+				Aliases: []string{"ntd"},
+				Usage:   "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory.",
+			},
+			&cli.BoolFlag{
+				Name:    "skiperror",
+				Aliases: []string{"se"},
+				Usage:   "When the files are downloaded from the folder, if an error occurs, the error is skipped by this option.",
+			},
+			&cli.IntFlag{
+				Name:    "concurrency",
+				Aliases: []string{"c"},
+				Usage:   "Number of concurrent downloads when fetching multiple files (e.g. from a folder or stdin).",
+				Value:   5,
+			},
+		},
+		Action: handler,
 	}
-	a.UsageText = "Download shared files on Google Drive."
-	a.Version = "2.0.6"
-	a.Flags = []cli.Flag{
-		&cli.StringFlag{
-			Name:  "url, u",
-			Usage: "URL of shared file on Google Drive. This is a required parameter.",
-		},
-		&cli.StringFlag{
-			Name:  "extension, e",
-			Usage: "Extension of output file. This is for only Google Docs (Spreadsheet, Document, Presentation).",
-			Value: "pdf",
-		},
-		&cli.StringFlag{
-			Name:  "filename, f",
-			Usage: "Filename of file which is output. When this was not used, the original filename on Google Drive is used.",
-		},
-		&cli.StringFlag{
-			Name:  "mimetype, m",
-			Usage: "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
-		},
-		&cli.StringFlag{
-			Name:  "resumabledownload, r",
-			Usage: "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
-		},
-		&cli.BoolFlag{
-			Name:  "NoProgress, np",
-			Usage: "When this option is used, the progression is not shown.",
-		},
-		&cli.BoolFlag{
-			Name:  "overwrite, o",
-			Usage: "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
-		},
-		&cli.BoolFlag{
-			Name:  "skip, s",
-			Usage: "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
-		},
-		&cli.BoolFlag{
-			Name:  "fileinf, i",
-			Usage: "Retrieve file information. API key is required.",
-		},
-		&cli.StringFlag{
-			Name:  "apikey, key",
-			Usage: "API key is used to retrieve file list from shared folder and file information.",
-		},
-		&cli.StringFlag{
-			Name:  "directory, d",
-			Usage: "Directory for saving downloaded files. When this is not used, the files are saved to the current working directory.",
-		},
-		&cli.BoolFlag{
-			Name:  "notcreatetopdirectory, ntd",
-			Usage: "When this option is NOT used (default situation), when a folder including subfolders is downloaded, the top folder which is downloaded is created as the top directory under the working directory. When this option is used, the top directory is not created and all files and subfolders under the top folder are downloaded under the working directory.",
-		},
-		&cli.BoolFlag{
-			Name:  "skiperror, se",
-			Usage: "When the files are downloaded from the folder, if an error occurs, the error is skipped by this option.",
-		},
-	}
-	return a
+	return app
 }
 
 // main : Main of this script
 func main() {
-	a := createHelp()
-	a.Action = handler
-	err := a.Run(os.Args)
-	if err != nil {
+	app := createHelp()
+	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

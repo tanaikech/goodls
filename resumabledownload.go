@@ -1,5 +1,6 @@
 // Package main (resumableDownload.go) :
 // These methods are for resumable downloading a shared file from Google Drive.
+// Refactored to support progress bar injection safely.
 package main
 
 import (
@@ -201,8 +202,6 @@ func (v *valResumableDownload) chkResumeFile() (bool, bool, error) {
 }
 
 // setIndent : Set indent of each element using the maximum length of element.
-// st is 2 dimensional array including values.
-// k is the index of each element for setting indent.
 func setIndent(st [][]string, k int) [][]string {
 	maxLen := func(max int) int {
 		for _, e := range st {

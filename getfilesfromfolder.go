@@ -1,5 +1,6 @@
 // Package main (getfilesfromfolder.go) :
 // These methods are for downloading all files from a shared folder of Google Drive.
+// Refactored to support robust concurrent downloads using strict channel semaphores.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	getfilelist "github.com/tanaikech/go-getfilelist"
+	"golang.org/x/sync/errgroup"
 	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -25,12 +27,9 @@ const (
 	driveAPI = "https://www.googleapis.com/drive/v3/files"
 )
 
-// mime2ext : Convert mimeType to extension.
+// mime2ext : Convert mimeType to extension directly from map (O(1)).
 func mime2ext(mime string) string {
-	var obj map[string]interface{}
-	json.Unmarshal([]byte(mimeVsEx), &obj)
-	res, _ := obj[mime].(string)
-	return res
+	return mimeVsEx[mime]
 }
 
 // downloadFileByAPIKey : Download file using API key.
@@ -50,10 +49,11 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		q.Set("supportsAllDrives", "true")
 	}
 	u.RawQuery = q.Encode()
-	bkWorkDir := p.WorkDir
-	bkFilename := p.Filename
+
+	// p is already cloned for the worker, so mutating is safe.
 	p.WorkDir = file.WebContentLink
 	p.Filename = file.Name
+
 	timeOut := func(size int64) int64 {
 		if size == 0 {
 			switch {
@@ -68,6 +68,7 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 	p.Client = &http.Client{
 		Timeout: time.Duration(timeOut) * time.Second,
 	}
+
 	res, err := p.fetch(u.String())
 	if err != nil {
 		return err
@@ -80,16 +81,11 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		defer res.Body.Close()
 		if p.SkipError {
 			fmt.Printf("!! Downloading '%s' (fileId: %s) was skipped by an error. Status code is %d.\n", file.Name, file.Id, res.StatusCode)
-			p.WorkDir = bkWorkDir
-			p.Filename = bkFilename
 			return nil
 		}
 		return fmt.Errorf("%s", r)
 	}
-	p.saveFile(res)
-	p.WorkDir = bkWorkDir
-	p.Filename = bkFilename
-	return nil
+	return p.saveFile(res)
 }
 
 // makeFileByCondition : Make file by condition.
@@ -153,40 +149,43 @@ func (p *para) makeDirByCondition(dir string) error {
 	return nil
 }
 
-// initDownload : Download files by Drive API using API key.
+// initDownload : Download files concurrently by Drive API using API key.
 func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
-	var err error
 	if !p.Disp {
 		fmt.Printf("Download files from a folder '%s'.\n", fileList.SearchedFolder.Name)
 		fmt.Printf("There are %d files and %d folders in the folder.\n", fileList.TotalNumberOfFiles, fileList.TotalNumberOfFolders-1)
 		fmt.Println("Starting download.")
 	}
+
 	idToName := map[string]interface{}{}
 	for i, e := range fileList.FolderTree.Folders {
 		idToName[e] = fileList.FolderTree.Names[i]
 	}
+
+	type downloadJob struct {
+		file *drive.File
+		path string
+	}
+	var jobs []downloadJob
+
+	// Create directories sequentially to prevent race conditions.
 	for _, e := range fileList.FileList {
-		path := p.WorkDir
+		targetPath := p.WorkDir
 		if p.Notcreatetopdirectory {
 			e.FolderTree = append(e.FolderTree[:0], e.FolderTree[1:]...)
 		}
 		for _, dir := range e.FolderTree {
-			path = filepath.Join(path, idToName[dir].(string))
+			targetPath = filepath.Join(targetPath, idToName[dir].(string))
 		}
-		if path != p.WorkDir {
-			err = p.makeDirByCondition(path)
-			if err != nil {
+		if targetPath != p.WorkDir {
+			if err := p.makeDirByCondition(targetPath); err != nil {
 				return err
 			}
 		}
+
 		for _, file := range e.Files {
 			if file.MimeType != "application/vnd.google-apps.script" {
-				file.WebContentLink = path // Substituting
-				p.Size = file.Size
-				err = p.makeFileByCondition(file)
-				if err != nil {
-					return err
-				}
+				jobs = append(jobs, downloadJob{file: file, path: targetPath})
 			} else {
 				if !p.Disp {
 					fmt.Printf("'%s' is a project file. Project file cannot be downloaded using API key.\n", file.Name)
@@ -194,23 +193,35 @@ func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
 			}
 		}
 	}
-	return nil
+
+	// Use strict channel semaphore to guarantee concurrency limit across environments
+	eg, _ := errgroup.WithContext(context.Background())
+	sem := make(chan struct{}, p.Concurrency)
+
+	for _, job := range jobs {
+		job := job
+		eg.Go(func() error {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			workerP := p.Clone()
+			job.file.WebContentLink = job.path
+			workerP.Size = job.file.Size
+			return workerP.makeFileByCondition(job.file)
+		})
+	}
+
+	return eg.Wait()
 }
 
-// defFormat : Default download format
+// defFormat : Default download format directly from map.
 func defFormat(mime string) string {
-	var df map[string]interface{}
-	json.Unmarshal([]byte(defaultformat), &df)
-	dmime, _ := df[mime].(string)
-	return dmime
+	return defaultformat[mime]
 }
 
-// extToMime : Convert from extension to mimeType of the file on Local.
+// extToMime : Convert from extension to mimeType of the file on Local directly from map.
 func extToMime(ext string) string {
-	var fm map[string]interface{}
-	json.Unmarshal([]byte(extVsmime), &fm)
-	st, _ := fm[strings.Replace(strings.ToLower(ext), ".", "", 1)].(string)
-	return st
+	return extVsmime[strings.Replace(strings.ToLower(ext), ".", "", 1)]
 }
 
 // dupChkFoldersFiles : Check duplication of folder names and filenames.
@@ -253,13 +264,13 @@ func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 							return extToMime(extt)
 						}()
 						if cmime != "" {
-							fileList.FileList[i].Files[j].WebViewLink = cmime // Substituting as OutMimeType
+							fileList.FileList[i].Files[j].WebViewLink = cmime
 						} else {
-							fileList.FileList[i].Files[j].WebViewLink = mime // Substituting as OutMimeType
+							fileList.FileList[i].Files[j].WebViewLink = mime
 						}
 					}
 				} else {
-					fileList.FileList[i].Files[j].WebViewLink = mime // Substituting as OutMimeType
+					fileList.FileList[i].Files[j].WebViewLink = mime
 				}
 				if file.MimeType != "application/vnd.google-apps.script" {
 					ext := filepath.Ext(file.Name)
