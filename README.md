@@ -47,13 +47,19 @@ You do not need to know how to code to use `goodls`. Simply download the executa
 
 The following builds are available:
 
-- `goodls_darwin_amd64` (macOS)
-- `goodls_linux_386` (Linux 32-bit)
-- `goodls_linux_amd64` (Linux 64-bit)
-- `goodls_linux_armv7` (Linux ARM / Raspberry Pi)
-- `goodls_linux_armv8` (Linux ARM64)
-- `goodls_windows_386.exe` (Windows 32-bit)
-- `goodls_windows_amd64.exe` (Windows 64-bit)
+- `goodls_darwin_amd64` (macOS Intel 64-bit)
+- `goodls_darwin_arm64` (macOS Apple Silicon)
+- `goodls_freebsd_amd64` (FreeBSD Intel 64-bit)
+- `goodls_freebsd_arm64` (FreeBSD ARM 64-bit)
+- `goodls_linux_386` (Linux Intel 32-bit)
+- `goodls_linux_amd64` (Linux Intel 64-bit)
+- `goodls_linux_arm64` (Linux ARM 64-bit)
+- `goodls_linux_arm7` (Linux ARM 32-bit / Raspberry Pi)
+- `goodls_linux_mips` (Linux MIPS Big-Endian)
+- `goodls_linux_mipsle` (Linux MIPS Little-Endian)
+- `goodls_windows_386.exe` (Windows Intel 32-bit)
+- `goodls_windows_amd64.exe` (Windows Intel 64-bit)
+- `goodls_windows_arm64.exe` (Windows ARM 64-bit)
 
 ### Option B: Build from Source (For Go Developers)
 
@@ -119,8 +125,9 @@ $ goodls -u [Folder_URL] -key [API_Key] -c 10
 ### Folder Download Options:
 
 - `-m [mimeType]`: Filter downloads. E.g., `-m "application/pdf,image/png"` downloads _only_ PDFs and PNGs from the folder.
-- `--overwrite` / `-o`: Overwrite local files if they already exist.
-- `--skip` / `-s`: Skip downloading files that already exist locally.
+- `--conflict` / `-cf`: Conflict resolution strategy when a file already exists: `prompt`, `skip`, `overwrite`, `newer`, `rename`. (Defaults to `prompt` in terminal).
+- `--overwrite` / `-o`: Legacy flag. Same as `--conflict overwrite`.
+- `--skip` / `-s`: Legacy flag. Same as `--conflict skip`.
 - `--notcreatetopdirectory` / `-ntd`: Dump the folder's contents directly into your current working directory without wrapping them in the top-level folder name.
 - `--skiperror` / `-se`: If one file fails, ignore it and continue downloading the rest of the folder.
 
@@ -168,6 +175,59 @@ $ goodls -u [URL] -key [API_Key] -r 100m
 
 `goodls` verifies the exact byte size and MD5 checksums of your local file against Google Drive to ensure bit-perfect resume accuracy.
 
+## 4. Conflict Resolution Strategy (New in v3.3.0) 🔄
+
+When a file with the same name already exists in your local target directory, `goodls` provides a highly customizable conflict resolution system. You can specify the desired behavior using the `-cf` or `--conflict` flag.
+
+### Available Strategies
+
+| Strategy | Values | Behavior |
+| :--- | :--- | :--- |
+| **Prompt** *(Default)* | `prompt` | In terminal environments, prompts you interactively to choose an action. In non-interactive environments, it gracefully falls back to `rename` to prevent hanging. |
+| **Skip** | `skip` | Safely skips the download and reports the skipped file. (Legacy `--skip` or `-s` flags map to this). |
+| **Overwrite** | `overwrite` | Overwrites the existing local file. (Legacy `--overwrite` or `-o` flags map to this). |
+| **Newer** | `newer` | Compares the local file's modification time with the remote file. Overwrites if the remote file is newer; otherwise, skips. If remote timestamp cannot be fetched, it safely falls back to `rename`. |
+| **Rename** | `rename` | Automatically appends a timestamp suffix (e.g., `_YYYYMMDD_HHMMSS`) to the filename. If that also exists, it appends a numeric counter (e.g., `_1`, `_2`). |
+
+---
+
+### Example Scenarios & Commands
+
+#### Scenario 1: Interactive Prompt (Default Terminal Behavior)
+If you download the same file twice in an interactive terminal, `goodls` will detect the conflict and ask how to proceed:
+```bash
+# First download creates the file
+$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+
+# Second download triggers the interactive prompt
+$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+
+# Prompt output:
+# [Conflict] File 'example.txt' already exists.
+# Choose action - [s]kip, [o]verwrite, [n]ewer, [r]ename, [a]bort:
+```
+*Simply type `r` to rename, `s` to skip, `o` to overwrite, `n` to use the newer file, or `a` to abort.*
+
+#### Scenario 2: Non-Interactive Skip (Best for Scripts/CI)
+To completely automate the download and safely skip any existing files without prompts or errors:
+```bash
+$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID" --conflict skip
+```
+
+#### Scenario 3: Smart Synchronization (Newer Strategy)
+Keep local files synchronized with Google Drive. It only downloads the file if the version on Google Drive is newer than your local copy:
+```bash
+$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID" --conflict newer
+```
+*Note: If the remote file's modification time is unavailable, `goodls` will gracefully fallback to the `rename` strategy to ensure no data is lost.*
+
+#### Scenario 4: Automated Renaming during Folder Downloads (API Key Required)
+When downloading entire folders recursively, interactive prompts can be tedious. You can enforce automatic renaming for all conflicting files to keep every version:
+```bash
+$ goodls --url "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" --apikey "YOUR_API_KEY" --conflict rename
+```
+*This will download all files, renaming collisions to `filename_YYYYMMDD_HHMMSS.ext` without prompting.*
+
 ---
 
 <a name="licence"></a>
@@ -187,6 +247,15 @@ If you have any questions and commissions for me, feel free to tell me.
 <a name="updatehistory"></a>
 
 # Update History
+
+- **v3.3.0 (May 31, 2026)**
+  1. **New Conflict Resolution System (`--conflict`, `-cf`)**: Implemented a comprehensive file conflict handling engine offering five robust strategies when a file already exists locally:
+     - `prompt` (Default in interactive terminals): Interactively choose from `[s]kip, [o]verwrite, [n]ewer, [r]ename, [a]bort`. Automatically falls back to `rename` in non-interactive environments.
+     - `skip`: Safely skip downloading existing files (mapped automatically from legacy `-s` / `--skip` options).
+     - `overwrite`: Overwrite existing files (mapped automatically from legacy `-o` / `--overwrite` options).
+     - `newer`: Compare modification times and overwrite only if the remote file is newer than the local copy (falls back to `rename` if remote time is unavailable).
+     - `rename`: Automatically append a timestamp suffix (`_YYYYMMDD_HHMMSS`) to the filename, appending incrementing numbers (e.g. `_1`, `_2`) if collisions continue.
+  2. **Enhanced Folder and Directory Handling**: Patched folder creation to use robust recursive directory checks and prevent filesystem write conflicts during parallel execution.
 
 - **v3.2.2 (May 27, 2026)**
   1. **Critical Progress Bar Lifecycle Fix**: Fixed a bug where indeterminate file sizes (such as Google Docs exports returning `0` size from the Drive API) caused the progress bar spinners to hang infinitely. Bar completion is now strictly enforced (`SetTotal(-1, true)`) upon IO completion.

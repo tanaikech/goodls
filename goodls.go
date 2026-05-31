@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	cli "github.com/urfave/cli/v2"
@@ -61,15 +62,120 @@ type para struct {
 	URLForLargeFile       string
 	Concurrency           int
 
+	ConflictStrategy string
+	ConflictResolved bool
+
 	Progress    *mpb.Progress
-	ResultJSONs []string
-	mu          sync.Mutex
+	ResultJSONs *[]string
+	mu          *sync.Mutex
 }
 
 // Clone : Deep copy necessary fields to prevent race conditions during concurrent execution.
 func (p *para) Clone() *para {
 	newP := *p
 	return &newP
+}
+
+// resolveConflict handles file existing conflicts
+func (p *para) resolveConflict(targetPath string, remoteTime time.Time) (string, string, error) {
+	if !chkFile(targetPath) {
+		return targetPath, "overwrite", nil
+	}
+
+	strategy := p.ConflictStrategy
+
+	// Graceful fallback for non-interactive environments
+	if strategy == "prompt" && !term.IsTerminal(int(syscall.Stdin)) {
+		strategy = "rename"
+	}
+
+prompt_loop:
+	for {
+		switch strategy {
+		case "skip":
+			return targetPath, "skip", nil
+		case "overwrite":
+			return targetPath, "overwrite", nil
+		case "newer":
+			localInfo, err := os.Stat(targetPath)
+			if err != nil {
+				return targetPath, "overwrite", nil
+			}
+			if remoteTime.IsZero() {
+				if !p.Disp {
+					p.mu.Lock()
+					fmt.Fprintf(os.Stderr, "[*] Warning: Cannot determine remote time for '%s'. Falling back to 'rename'.\n", filepath.Base(targetPath))
+					p.mu.Unlock()
+				}
+				strategy = "rename"
+				continue prompt_loop
+			}
+			if remoteTime.After(localInfo.ModTime()) {
+				return targetPath, "overwrite", nil
+			}
+			return targetPath, "skip", nil
+		case "rename":
+			ext := filepath.Ext(targetPath)
+			base := targetPath[:len(targetPath)-len(ext)]
+
+			timestamp := time.Now().Format("20060102_150405")
+			newPath := fmt.Sprintf("%s_%s%s", base, timestamp, ext)
+			if !chkFile(newPath) {
+				return newPath, "overwrite", nil
+			}
+
+			for i := 1; ; i++ {
+				newPath = fmt.Sprintf("%s_%s_%d%s", base, timestamp, i, ext)
+				if !chkFile(newPath) {
+					return newPath, "overwrite", nil
+				}
+			}
+		case "prompt":
+			p.mu.Lock()
+			fmt.Fprintf(os.Stderr, "\r\033[K[Conflict] File '%s' already exists.\n", filepath.Base(targetPath))
+			if p.DlFolder {
+				fmt.Fprintf(os.Stderr, "Hint: You are downloading a folder. Use '--conflict [skip|overwrite|newer|rename]' to avoid repeated prompts.\n")
+			}
+			fmt.Fprintf(os.Stderr, "Choose action - [s]kip, [o]verwrite, [n]ewer, [r]ename, [a]bort: ")
+
+			var input string
+			var b [1]byte
+			// Raw read to explicitly prevent bufio from consuming the pipe stream ahead of time
+			for {
+				n, err := os.Stdin.Read(b[:])
+				if err != nil || n == 0 {
+					break
+				}
+				if b[0] == '\n' {
+					break
+				}
+				if b[0] != '\r' {
+					input += string(b[0])
+				}
+			}
+			p.mu.Unlock()
+
+			input = strings.TrimSpace(strings.ToLower(input))
+			switch input {
+			case "s", "skip":
+				return targetPath, "skip", nil
+			case "o", "overwrite":
+				return targetPath, "overwrite", nil
+			case "n", "newer":
+				strategy = "newer"
+			case "r", "rename":
+				strategy = "rename"
+			case "a", "abort":
+				return targetPath, "abort", fmt.Errorf("download aborted by user for %s", targetPath)
+			default:
+				p.mu.Lock()
+				fmt.Fprintf(os.Stderr, "Invalid input. Please try again.\n")
+				p.mu.Unlock()
+			}
+		default:
+			return targetPath, "skip", fmt.Errorf("unknown conflict strategy: %s", strategy)
+		}
+	}
 }
 
 // getURLFromHTML : Get the download URL from HTML.
@@ -104,7 +210,6 @@ func (p *para) getURLFromHTML(html *http.Response) error {
 
 // saveFile : Save retrieved data as a file with progress bar integration.
 func (p *para) saveFile(res *http.Response) error {
-	// Ensure the HTTP response body is always closed
 	defer res.Body.Close()
 
 	var err error
@@ -115,16 +220,44 @@ func (p *para) saveFile(res *http.Response) error {
 		return err
 	}
 
+	targetPath := filepath.Join(p.WorkDir, p.Filename)
+
+	if p.DownloadBytes == -1 && !p.ConflictResolved {
+		var remoteTime time.Time
+		if lastModified := res.Header.Get("Last-Modified"); lastModified != "" {
+			if t, err := http.ParseTime(lastModified); err == nil {
+				remoteTime = t
+			}
+		}
+
+		resolvedPath, action, err := p.resolveConflict(targetPath, remoteTime)
+		if err != nil {
+			return err
+		}
+		if action == "skip" {
+			p.Filename = filepath.Base(targetPath)
+			if !p.Disp {
+				p.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[*] Skipped: '%s' already exists.\n", p.Filename)
+				p.mu.Unlock()
+			}
+			return nil
+		}
+
+		p.Filename = filepath.Base(resolvedPath)
+		targetPath = resolvedPath
+		p.ConflictResolved = true
+	}
+
 	var file *os.File
 	if p.DownloadBytes == -1 {
-		file, err = os.Create(filepath.Join(p.WorkDir, p.Filename))
+		file, err = os.Create(targetPath)
 	} else {
-		file, err = os.OpenFile(filepath.Join(p.WorkDir, p.Filename), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		file, err = os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	}
 	if err != nil {
 		return err
 	}
-	// Ensure the file descriptor is properly closed when function exits
 	defer file.Close()
 
 	var reader io.Reader = res.Body
@@ -149,7 +282,6 @@ func (p *para) saveFile(res *http.Response) error {
 				),
 			)
 		} else {
-			// For indeterminate file sizes (e.g. Google Docs exports), use a spinner
 			bar = p.Progress.AddBar(0,
 				mpb.PrependDecorators(
 					nameDecor,
@@ -166,12 +298,11 @@ func (p *para) saveFile(res *http.Response) error {
 
 	_, err = io.Copy(file, reader)
 
-	// CRITICAL FIX: Manually enforce progress bar completion or abortion to prevent infinite hanging
 	if bar != nil {
 		if err != nil {
-			bar.Abort(false) // Drop the bar from wait group on failure
+			bar.Abort(false)
 		} else {
-			bar.SetTotal(-1, true) // Force complete status
+			bar.SetTotal(-1, true)
 		}
 	}
 
@@ -186,7 +317,7 @@ func (p *para) saveFile(res *http.Response) error {
 
 	resJSON := fmt.Sprintf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
 	p.mu.Lock()
-	p.ResultJSONs = append(p.ResultJSONs, resJSON)
+	*p.ResultJSONs = append(*p.ResultJSONs, resJSON)
 	if p.Disp {
 		fmt.Println(resJSON)
 	}
@@ -397,6 +528,20 @@ func handler(c *cli.Context) error {
 		concurrency = 5
 	}
 
+	conflict := strings.ToLower(c.String("conflict"))
+	if c.Bool("overwrite") {
+		conflict = "overwrite"
+	} else if c.Bool("skip") {
+		conflict = "skip"
+	}
+
+	switch conflict {
+	case "prompt", "skip", "overwrite", "newer", "rename":
+		// valid
+	default:
+		return fmt.Errorf("invalid conflict strategy: %s", conflict)
+	}
+
 	p := &para{
 		Disp:              c.Bool("NoProgress"),
 		DownloadBytes:     -1,
@@ -409,6 +554,7 @@ func handler(c *cli.Context) error {
 		WorkDir:           workdir,
 		DlFolder:          false,
 		Concurrency:       concurrency,
+		ConflictStrategy:  conflict,
 		InputtedMimeType: func(mime string) []string {
 			if mime != "" {
 				return regexp.MustCompile(`\s*,\s*`).Split(mime, -1)
@@ -416,6 +562,8 @@ func handler(c *cli.Context) error {
 			return nil
 		}(c.String("mimetype")),
 		Notcreatetopdirectory: c.Bool("notcreatetopdirectory"),
+		ResultJSONs:           &[]string{},
+		mu:                    &sync.Mutex{},
 	}
 
 	ignoreAPIKey := c.Bool("no-apikey")
@@ -501,11 +649,10 @@ func handler(c *cli.Context) error {
 		eg.Wait()
 	}
 
-	// This Wait() will no longer block infinitely because SetTotal(-1, true) is strictly called
 	if p.Progress != nil {
 		p.Progress.Wait()
 		if !p.Disp {
-			for _, jsonRes := range p.ResultJSONs {
+			for _, jsonRes := range *p.ResultJSONs {
 				fmt.Println(jsonRes)
 			}
 		}
@@ -520,7 +667,7 @@ func createHelp() *cli.App {
 		Name:    appname,
 		Authors: []*cli.Author{{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"}},
 		Usage:   "Download shared files on Google Drive.",
-		Version: "3.2.2", // Bumped version for progress bar completion fix
+		Version: "3.3.0",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "url",
@@ -544,6 +691,12 @@ func createHelp() *cli.App {
 				Usage:   "mimeType (You can retrieve only files with the specific mimeType, when files are downloaded from a folder.) ex. '-m \"mimeType1,mimeType2\"'",
 			},
 			&cli.StringFlag{
+				Name:    "conflict",
+				Aliases: []string{"cf"},
+				Usage:   "Conflict resolution strategy when a file already exists: 'prompt', 'skip', 'overwrite', 'newer', 'rename'. Defaults to 'prompt' in terminal.",
+				Value:   "prompt",
+			},
+			&cli.StringFlag{
 				Name:    "resumabledownload",
 				Aliases: []string{"r"},
 				Usage:   "File is downloaded as the resumable download. For example, when '-r 1m' is used, the size of 1 MB is downloaded and create new file or append the existing file. API key is required.",
@@ -556,12 +709,12 @@ func createHelp() *cli.App {
 			&cli.BoolFlag{
 				Name:    "overwrite",
 				Aliases: []string{"o"},
-				Usage:   "When filename of downloading file is existing in directory at local PC, overwrite it. At default, it is not overwritten.",
+				Usage:   "Legacy flag. Overwrite existing files (same as --conflict overwrite).",
 			},
 			&cli.BoolFlag{
 				Name:    "skip",
 				Aliases: []string{"s"},
-				Usage:   "When filename of downloading file is existing in directory at local PC, skip it. At default, it is not overwritten.",
+				Usage:   "Legacy flag. Skip existing files (same as --conflict skip).",
 			},
 			&cli.BoolFlag{
 				Name:    "fileinf",

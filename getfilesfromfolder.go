@@ -50,7 +50,6 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 	}
 	u.RawQuery = q.Encode()
 
-	// p is already cloned for the worker, so mutating is safe.
 	p.WorkDir = file.WebContentLink
 	p.Filename = file.Name
 
@@ -90,32 +89,40 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 
 // makeFileByCondition : Make file by condition.
 func (p *para) makeFileByCondition(file *drive.File) error {
-	if er := chkFile(filepath.Join(file.WebContentLink, file.Name)); er {
-		if !p.OverWrite && !p.Skip {
-			return fmt.Errorf("'%s' is existing. If you want to overwrite, please use an option '--overwrite'", file.WebContentLink)
+	targetPath := filepath.Join(file.WebContentLink, file.Name)
+
+	var remoteTime time.Time
+	if file.ModifiedTime != "" {
+		if t, err := time.Parse(time.RFC3339, file.ModifiedTime); err == nil {
+			remoteTime = t
 		}
-		if p.OverWrite && !p.Skip {
-			return p.downloadFileByAPIKey(file)
-		}
-		if !p.Disp && p.Skip {
-			fmt.Printf("Downloading '%s' was skipped because of existing.\n", file.Name)
-		}
-	} else {
-		return p.downloadFileByAPIKey(file)
 	}
-	return nil
+
+	resolvedPath, action, err := p.resolveConflict(targetPath, remoteTime)
+	if err != nil {
+		return err
+	}
+
+	if action == "skip" {
+		if !p.Disp {
+			p.mu.Lock()
+			fmt.Fprintf(os.Stderr, "[*] Skipped: '%s' already exists.\n", filepath.Base(targetPath))
+			p.mu.Unlock()
+		}
+		return nil
+	}
+
+	file.Name = filepath.Base(resolvedPath)
+	file.WebContentLink = filepath.Dir(resolvedPath)
+	p.ConflictResolved = true
+
+	return p.downloadFileByAPIKey(file)
 }
 
 // makeDir : Make a directory by checking duplication.
 func (p *para) makeDir(folder string) error {
-	if er := chkFile(folder); !er {
-		if err := os.Mkdir(folder, 0777); err != nil {
-			return err
-		}
-	} else {
-		if !p.OverWrite && !p.Skip {
-			return fmt.Errorf("'%s' is existing. If you want to overwrite, please use an option '--overwrite'", folder)
-		}
+	if err := os.MkdirAll(folder, 0777); err != nil {
+		return err
 	}
 	return nil
 }
@@ -128,25 +135,14 @@ func chkFile(name string) bool {
 
 // makeDirByCondition : Make directory by condition.
 func (p *para) makeDirByCondition(dir string) error {
-	var err error
-	if er := chkFile(dir); er {
-		if !p.OverWrite && !p.Skip {
-			return fmt.Errorf("'%s' is existing. If you want to overwrite, please use option '--overwrite' or '--skip'", dir)
+	info, err := os.Stat(dir)
+	if err == nil {
+		if info.IsDir() {
+			return nil
 		}
-		if p.OverWrite && !p.Skip {
-			if err = p.makeDir(dir); err != nil {
-				return err
-			}
-		}
-		if !p.Disp && p.Skip {
-			fmt.Printf("Creating '%s' was skipped because of existing.\n", dir)
-		}
-	} else {
-		if err = p.makeDir(dir); err != nil {
-			return err
-		}
+		return fmt.Errorf("cannot create directory '%s', a file with that name already exists", dir)
 	}
-	return nil
+	return p.makeDir(dir)
 }
 
 // initDownload : Download files concurrently by Drive API using API key.
