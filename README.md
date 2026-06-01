@@ -197,6 +197,8 @@ When a file with the same name already exists in your local target directory, `g
 
 ## 5. Native MCP Server Integration (For AI Agents) 🤖
 
+![Sample on Antigravity CLI](images/fig2a.jpg)
+
 `goodls` natively acts as an MCP (Model Context Protocol) server. By adding it to your AI assistant's configuration, you can empower agents (like Claude Desktop or Cursor) to securely download Google Drive data directly into your workspace.
 
 **Benefits as an MCP Server:**
