@@ -1,7 +1,4 @@
-// Package main (getfilesfromfolder.go) :
-// These methods are for downloading all files from a shared folder of Google Drive.
-// Refactored to support robust concurrent downloads using strict channel semaphores.
-package main
+package goodls
 
 import (
 	"context"
@@ -33,7 +30,7 @@ func mime2ext(mime string) string {
 }
 
 // downloadFileByAPIKey : Download file using API key.
-func (p *para) downloadFileByAPIKey(file *drive.File) error {
+func (p *Para) downloadFileByAPIKey(file *drive.File) error {
 	u, err := url.Parse(driveAPI)
 	if err != nil {
 		return err
@@ -46,7 +43,7 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		q.Set("mimeType", file.WebViewLink)
 	} else {
 		q.Set("alt", "media")
-		q.Set("supportsAllDrives", "true")
+		q.Set("supportsAllDrives", "true") // Support Shared Drives
 	}
 	u.RawQuery = q.Encode()
 
@@ -79,7 +76,9 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 		}
 		defer res.Body.Close()
 		if p.SkipError {
-			fmt.Printf("!! Downloading '%s' (fileId: %s) was skipped by an error. Status code is %d.\n", file.Name, file.Id, res.StatusCode)
+			if !p.MCPMode {
+				fmt.Fprintf(os.Stderr, "!! Downloading '%s' (fileId: %s) was skipped by an error. Status code is %d.\n", file.Name, file.Id, res.StatusCode)
+			}
 			return nil
 		}
 		return fmt.Errorf("%s", r)
@@ -88,7 +87,7 @@ func (p *para) downloadFileByAPIKey(file *drive.File) error {
 }
 
 // makeFileByCondition : Make file by condition.
-func (p *para) makeFileByCondition(file *drive.File) error {
+func (p *Para) makeFileByCondition(file *drive.File) error {
 	targetPath := filepath.Join(file.WebContentLink, file.Name)
 
 	var remoteTime time.Time
@@ -104,7 +103,7 @@ func (p *para) makeFileByCondition(file *drive.File) error {
 	}
 
 	if action == "skip" {
-		if !p.Disp {
+		if !p.Disp && !p.MCPMode {
 			p.mu.Lock()
 			fmt.Fprintf(os.Stderr, "[*] Skipped: '%s' already exists.\n", filepath.Base(targetPath))
 			p.mu.Unlock()
@@ -120,7 +119,7 @@ func (p *para) makeFileByCondition(file *drive.File) error {
 }
 
 // makeDir : Make a directory by checking duplication.
-func (p *para) makeDir(folder string) error {
+func (p *Para) makeDir(folder string) error {
 	if err := os.MkdirAll(folder, 0777); err != nil {
 		return err
 	}
@@ -134,7 +133,7 @@ func chkFile(name string) bool {
 }
 
 // makeDirByCondition : Make directory by condition.
-func (p *para) makeDirByCondition(dir string) error {
+func (p *Para) makeDirByCondition(dir string) error {
 	info, err := os.Stat(dir)
 	if err == nil {
 		if info.IsDir() {
@@ -146,11 +145,11 @@ func (p *para) makeDirByCondition(dir string) error {
 }
 
 // initDownload : Download files concurrently by Drive API using API key.
-func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
-	if !p.Disp {
-		fmt.Printf("Download files from a folder '%s'.\n", fileList.SearchedFolder.Name)
-		fmt.Printf("There are %d files and %d folders in the folder.\n", fileList.TotalNumberOfFiles, fileList.TotalNumberOfFolders-1)
-		fmt.Println("Starting download.")
+func (p *Para) initDownload(fileList *getfilelist.FileListDl) error {
+	if !p.Disp && !p.MCPMode {
+		fmt.Fprintf(os.Stderr, "Download files from a folder '%s'.\n", fileList.SearchedFolder.Name)
+		fmt.Fprintf(os.Stderr, "There are %d files and %d folders in the folder.\n", fileList.TotalNumberOfFiles, fileList.TotalNumberOfFolders-1)
+		fmt.Fprintf(os.Stderr, "Starting download.\n")
 	}
 
 	idToName := map[string]interface{}{}
@@ -168,7 +167,9 @@ func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
 	for _, e := range fileList.FileList {
 		targetPath := p.WorkDir
 		if p.Notcreatetopdirectory {
-			e.FolderTree = append(e.FolderTree[:0], e.FolderTree[1:]...)
+			if len(e.FolderTree) > 0 {
+				e.FolderTree = append(e.FolderTree[:0], e.FolderTree[1:]...)
+			}
 		}
 		for _, dir := range e.FolderTree {
 			targetPath = filepath.Join(targetPath, idToName[dir].(string))
@@ -183,8 +184,8 @@ func (p *para) initDownload(fileList *getfilelist.FileListDl) error {
 			if file.MimeType != "application/vnd.google-apps.script" {
 				jobs = append(jobs, downloadJob{file: file, path: targetPath})
 			} else {
-				if !p.Disp {
-					fmt.Printf("'%s' is a project file. Project file cannot be downloaded using API key.\n", file.Name)
+				if !p.Disp && !p.MCPMode {
+					fmt.Fprintf(os.Stderr, "'%s' is a project file. Project file cannot be downloaded using API key.\n", file.Name)
 				}
 			}
 		}
@@ -221,7 +222,7 @@ func extToMime(ext string) string {
 }
 
 // dupChkFoldersFiles : Check duplication of folder names and filenames.
-func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
+func (p *Para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 	dupChk1 := map[string]bool{}
 	cnt1 := 2
 	for i, folderName := range fileList.FolderTree.Names {
@@ -280,12 +281,13 @@ func (p *para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 }
 
 // getFilesFromFolder: This method is the main method for downloading all files in a shared folder.
-func (p *para) getFilesFromFolder() error {
+func (p *Para) getFilesFromFolder() error {
 	srv, err := drive.NewService(context.Background(), option.WithAPIKey(p.APIKey))
 	if err != nil {
 		return err
 	}
 	fileList, err := func() (*getfilelist.FileListDl, error) {
+		// go-getfilelist uses SupportsAllDrives internally, covering Shared Drives
 		if len(p.InputtedMimeType) > 0 {
 			return getfilelist.Folder(p.SearchID).MimeType(p.InputtedMimeType).Do(srv)
 		}
@@ -299,7 +301,9 @@ func (p *para) getFilesFromFolder() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s\n", r)
+		if !p.MCPMode {
+			fmt.Printf("%s\n", r)
+		}
 		return nil
 	}
 	p.dupChkFoldersFiles(fileList)

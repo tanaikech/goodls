@@ -1,7 +1,4 @@
-// Package main (resumableDownload.go) :
-// These methods are for resumable downloading a shared file from Google Drive.
-// Refactored to support progress bar injection safely.
-package main
+package goodls
 
 import (
 	"context"
@@ -27,7 +24,7 @@ import (
 
 // valResumableDownload : Structure for resumable download
 type valResumableDownload struct {
-	para
+	Para
 	dlParams
 }
 
@@ -41,10 +38,10 @@ type dlParams struct {
 	End             int64
 }
 
-// getFileInfFromP : Retrieve file information from *para.
-func (p *para) getFileInfFromP() (*drive.File, error) {
+// getFileInfFromP : Retrieve file information from *Para.
+func (p *Para) getFileInfFromP() (*drive.File, error) {
 	v := &valResumableDownload{
-		para: *p,
+		Para: *p,
 	}
 	v.Client = &http.Client{}
 	if err := v.getFileInf(); err != nil {
@@ -54,7 +51,7 @@ func (p *para) getFileInfFromP() (*drive.File, error) {
 }
 
 // showFileInf : Show file information.
-func (p *para) showFileInf() error {
+func (p *Para) showFileInf() error {
 	dlfile, err := p.getFileInfFromP()
 	if err != nil {
 		return err
@@ -63,7 +60,9 @@ func (p *para) showFileInf() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n", r)
+	if !p.MCPMode {
+		fmt.Printf("%s\n", r)
+	}
 	return nil
 }
 
@@ -115,6 +114,7 @@ func (v *valResumableDownload) resDownloadFileByAPIKey() (*http.Response, error)
 	q := u.Query()
 	q.Set("alt", "media")
 	q.Set("key", v.APIKey)
+	q.Set("supportsAllDrives", "true") // Added Shared Drive Support Explicitly
 	u.RawQuery = q.Encode()
 	timeOut := func(size int64) int64 {
 		if size == 0 {
@@ -150,7 +150,7 @@ func (v *valResumableDownload) resDownloadFileByAPIKey() (*http.Response, error)
 
 // getFileInf : Retrieve file infomation using Drive API.
 func (v *valResumableDownload) getFileInf() error {
-	srv, err := drive.NewService(context.Background(), option.WithAPIKey(v.para.APIKey))
+	srv, err := drive.NewService(context.Background(), option.WithAPIKey(v.Para.APIKey))
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func (v *valResumableDownload) getStatusMsg(fc, end bool) string {
 	case !fc && end:
 		cs, err := getMd5Checksum(filepath.Join(v.WorkDir, v.Filename))
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		st := [][]string{
@@ -292,9 +292,9 @@ func (v *valResumableDownload) getStatusMsg(fc, end bool) string {
 }
 
 // resumableDownload : Main method of resumable download.
-func (p *para) resumableDownload() error {
+func (p *Para) resumableDownload() error {
 	v := &valResumableDownload{
-		para: *p,
+		Para: *p,
 	}
 	if err := v.getFileInf(); err != nil {
 		return err
@@ -306,6 +306,18 @@ func (p *para) resumableDownload() error {
 	if err != nil {
 		return err
 	}
+
+	if p.MCPMode {
+		if (!fc && !end) || (fc && !end) {
+			res, err := v.resDownloadFileByAPIKey()
+			if err != nil {
+				return err
+			}
+			return v.Para.saveFile(res)
+		}
+		return nil
+	}
+
 	msg := v.getStatusMsg(fc, end)
 	if (!fc && !end) || (fc && !end) {
 		fmt.Printf("\n%s\n\n", msg)
@@ -319,7 +331,7 @@ func (p *para) resumableDownload() error {
 			if err != nil {
 				return err
 			}
-			return v.para.saveFile(res)
+			return v.Para.saveFile(res)
 		}
 	} else {
 		fmt.Printf("\n%s\n", msg)

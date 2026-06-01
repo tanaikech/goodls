@@ -3,7 +3,7 @@
 <a name="top"></a>
 [![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENCE)
 
-![goodls](images/fig1.jpg)
+![goodls](images/fig1a.jpg)
 
 <a name="overview"></a>
 
@@ -33,9 +33,13 @@ Watch your data arrive in real-time. When downloading multiple files, `goodls` g
 
 Network drop? No problem. Run resumable downloads for massive files. You can specify exact byte chunks (e.g., `100m` for 100 Megabytes) to safely append data to an existing incomplete file.
 
-### 5. Secure Credential Management 🔒 _(New in v3.2.0)_
+### 5. Secure Credential Management 🔒 _(New in v3.2.0+)_
 
 Strict API key masking and source tracking ensure your credentials never accidentally leak into terminal logs or CI/CD pipelines, while still giving you precise feedback on exactly which key is driving the process.
+
+### 6. Native MCP Server Integration 🤖 _(New in v3.3.1)_
+
+Fully compliant with Model Context Protocol via standard stdio JSON-RPC. Automatically manages headless conflict resolutions, automatic directory creations, and non-blocking asynchronous execution constraints when invoked by autonomous AI agents like Claude Desktop or Cursor.
 
 ---
 
@@ -66,7 +70,7 @@ The following builds are available:
 If you have Go installed (Go 1.26+ recommended), you can compile and install it globally in one command:
 
 ```bash
-$ go install github.com/tanaikech/goodls@latest
+$ go install github.com/tanaikech/goodls/cmd/goodls@latest
 ```
 
 ---
@@ -175,58 +179,69 @@ $ goodls -u [URL] -key [API_Key] -r 100m
 
 `goodls` verifies the exact byte size and MD5 checksums of your local file against Google Drive to ensure bit-perfect resume accuracy.
 
-## 4. Conflict Resolution Strategy (New in v3.3.0) 🔄
+## 4. Conflict Resolution Strategy 🔄
 
 When a file with the same name already exists in your local target directory, `goodls` provides a highly customizable conflict resolution system. You can specify the desired behavior using the `-cf` or `--conflict` flag.
 
 ### Available Strategies
 
-| Strategy | Values | Behavior |
-| :--- | :--- | :--- |
-| **Prompt** *(Default)* | `prompt` | In terminal environments, prompts you interactively to choose an action. In non-interactive environments, it gracefully falls back to `rename` to prevent hanging. |
-| **Skip** | `skip` | Safely skips the download and reports the skipped file. (Legacy `--skip` or `-s` flags map to this). |
-| **Overwrite** | `overwrite` | Overwrites the existing local file. (Legacy `--overwrite` or `-o` flags map to this). |
-| **Newer** | `newer` | Compares the local file's modification time with the remote file. Overwrites if the remote file is newer; otherwise, skips. If remote timestamp cannot be fetched, it safely falls back to `rename`. |
-| **Rename** | `rename` | Automatically appends a timestamp suffix (e.g., `_YYYYMMDD_HHMMSS`) to the filename. If that also exists, it appends a numeric counter (e.g., `_1`, `_2`). |
+| Strategy               | Values      | Behavior                                                                                                                                                                                             |
+| :--------------------- | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Prompt** _(Default)_ | `prompt`    | In terminal environments, prompts you interactively to choose an action. In non-interactive environments, it gracefully falls back to `rename` to prevent hanging.                                   |
+| **Skip**               | `skip`      | Safely skips the download and reports the skipped file. (Legacy `--skip` or `-s` flags map to this).                                                                                                 |
+| **Overwrite**          | `overwrite` | Overwrites the existing local file. (Legacy `--overwrite` or `-o` flags map to this).                                                                                                                |
+| **Newer**              | `newer`     | Compares the local file's modification time with the remote file. Overwrites if the remote file is newer; otherwise, skips. If remote timestamp cannot be fetched, it safely falls back to `rename`. |
+| **Rename**             | `rename`    | Automatically appends a timestamp suffix (e.g., `_YYYYMMDD_HHMMSS`) to the filename. If that also exists, it appends a numeric counter (e.g., `_1`, `_2`).                                           |
 
----
+<a name="mcp"></a>
 
-### Example Scenarios & Commands
+## 5. Native MCP Server Integration (For AI Agents) 🤖
 
-#### Scenario 1: Interactive Prompt (Default Terminal Behavior)
-If you download the same file twice in an interactive terminal, `goodls` will detect the conflict and ask how to proceed:
-```bash
-# First download creates the file
-$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+`goodls` natively acts as an MCP (Model Context Protocol) server. By adding it to your AI assistant's configuration, you can empower agents (like Claude Desktop or Cursor) to securely download Google Drive data directly into your workspace.
 
-# Second download triggers the interactive prompt
-$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+**Benefits as an MCP Server:**
 
-# Prompt output:
-# [Conflict] File 'example.txt' already exists.
-# Choose action - [s]kip, [o]verwrite, [n]ewer, [r]ename, [a]bort:
+- **Zero Authentication Friction**: Fetch public files dynamically without writing scraping scripts or handling OAuth flows inside the agent.
+- **Headless Stability**: Non-blocking asynchronous JSON-RPC routing ensures the server never times out from `ping` drops, even when downloading 10GB+ files over a slow network.
+- **Smart Conflict Resolution**: The agent can declare `skip`, `overwrite`, or `rename` logic safely, completely avoiding locked terminal prompts.
+- **Auto-Directory Generation**: Prompts the agent to pass arbitrary paths (e.g., `./datasets/2026`); `goodls` will securely and recursively construct directories on the fly.
+
+### Tool Overview (`download`):
+
+The server exposes the `download` tool, which takes the following parameters:
+
+- `url` (Required): Target Google Drive URL.
+- `directory` (Optional): The local target directory to save the file.
+- `conflict` (Optional): Strategy when files exist (`prompt`, `skip`, `overwrite`, `newer`, `rename`).
+- `apikey` (Optional): Required only if fetching a whole directory/folder.
+
+### Configuration Example
+
+To use `goodls` inside Claude Desktop or Cursor, append this to your `claude_desktop_config.json` or MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "goodls": {
+      "command": "/absolute/path/to/goodls",
+      "args": ["mcp"],
+      "env": {
+        "GOODLS_APIKEY": "YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
 ```
-*Simply type `r` to rename, `s` to skip, `o` to overwrite, `n` to use the newer file, or `a` to abort.*
 
-#### Scenario 2: Non-Interactive Skip (Best for Scripts/CI)
-To completely automate the download and safely skip any existing files without prompts or errors:
-```bash
-$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID" --conflict skip
-```
+_(Ensure you replace `/absolute/path/to/goodls` with the actual path to the executable)._
 
-#### Scenario 3: Smart Synchronization (Newer Strategy)
-Keep local files synchronized with Google Drive. It only downloads the file if the version on Google Drive is newer than your local copy:
-```bash
-$ goodls --url "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID" --conflict newer
-```
-*Note: If the remote file's modification time is unavailable, `goodls` will gracefully fallback to the `rename` strategy to ensure no data is lost.*
+### Sample Prompts for AI Agents
 
-#### Scenario 4: Automated Renaming during Folder Downloads (API Key Required)
-When downloading entire folders recursively, interactive prompts can be tedious. You can enforce automatic renaming for all conflicting files to keep every version:
-```bash
-$ goodls --url "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" --apikey "YOUR_API_KEY" --conflict rename
-```
-*This will download all files, renaming collisions to `filename_YYYYMMDD_HHMMSS.ext` without prompting.*
+You can use natural language prompts like these to direct your AI:
+
+- _"Use the `goodls` MCP server to download the Google Drive file at `https://drive.google.com/file/d/xxxxxx/view` to the `./data` directory. If it already exists, please overwrite it."_
+- _"Fetch all files from this shared folder (`https://drive.google.com/drive/folders/xxxxxx`) using `goodls`, save them to `./datasets`, and skip any files we already have locally."_
+- _"I need the dataset from `https://drive.google.com/file/d/xxxxxx/view`. Download it using `goodls`. If there's a conflict, ask me how to resolve it before proceeding."_
 
 ---
 
@@ -248,29 +263,30 @@ If you have any questions and commissions for me, feel free to tell me.
 
 # Update History
 
+- **v3.3.1 (June 01, 2026)**
+  1. **Native MCP Server Capabilities (`mcp` subcommand)**: `goodls` now functions as an autonomous tool for LLMs via the Model Context Protocol. Features seamless stdio JSON-RPC handshaking, strict prompt fallback controls, and robust capability discovery.
+  2. **Asynchronous Architecture & Ping Stabilization**: Rebuilt the MCP request loop using Goroutines and Mutex locks to support large file downloads without blocking system `ping` messages, completely fixing the `connection closed` timeout issues caused by aggressive clients.
+  3. **Intelligent Directory Creation**: MCP tool invocations targeting non-existent local paths automatically perform `os.MkdirAll` recursively to eliminate friction for AI agents.
+  4. **Shared Drives API Expansion**: Enhanced query logic natively enforces `supportsAllDrives=true`, ensuring flawless downloads from enterprise Google Workspace Shared Drives across all fetch behaviors.
+
 - **v3.3.0 (May 31, 2026)**
-  1. **New Conflict Resolution System (`--conflict`, `-cf`)**: Implemented a comprehensive file conflict handling engine offering five robust strategies when a file already exists locally:
-     - `prompt` (Default in interactive terminals): Interactively choose from `[s]kip, [o]verwrite, [n]ewer, [r]ename, [a]bort`. Automatically falls back to `rename` in non-interactive environments.
-     - `skip`: Safely skip downloading existing files (mapped automatically from legacy `-s` / `--skip` options).
-     - `overwrite`: Overwrite existing files (mapped automatically from legacy `-o` / `--overwrite` options).
-     - `newer`: Compare modification times and overwrite only if the remote file is newer than the local copy (falls back to `rename` if remote time is unavailable).
-     - `rename`: Automatically append a timestamp suffix (`_YYYYMMDD_HHMMSS`) to the filename, appending incrementing numbers (e.g. `_1`, `_2`) if collisions continue.
+  1. **New Conflict Resolution System (`--conflict`, `-cf`)**: Implemented a comprehensive file conflict handling engine offering five robust strategies when a file already exists locally (`prompt`, `skip`, `overwrite`, `newer`, `rename`).
   2. **Enhanced Folder and Directory Handling**: Patched folder creation to use robust recursive directory checks and prevent filesystem write conflicts during parallel execution.
 
 - **v3.2.2 (May 27, 2026)**
-  1. **Critical Progress Bar Lifecycle Fix**: Fixed a bug where indeterminate file sizes (such as Google Docs exports returning `0` size from the Drive API) caused the progress bar spinners to hang infinitely. Bar completion is now strictly enforced (`SetTotal(-1, true)`) upon IO completion.
-  2. **Resource Leak Patches**: Hardened HTTP body and local file descriptor management using strictly placed `defer` statements, preventing memory leaks during connection errors.
+  1. **Critical Progress Bar Lifecycle Fix**: Fixed a bug where indeterminate file sizes caused the progress bar spinners to hang infinitely.
+  2. **Resource Leak Patches**: Hardened HTTP body and local file descriptor management using strictly placed `defer` statements.
 
 - **v3.2.1 (May 27, 2026)**
-  1. **Strict Channel Semaphore**: Patched an edge case where standard `errgroup` limits were bypassed, causing folder downloads to dump excessive concurrent requests. The `--concurrency` (`-c`) limit is now strictly guaranteed at the language level using buffered channels.
+  1. **Strict Channel Semaphore**: Patched an edge case where standard `errgroup` limits were bypassed. The `--concurrency` (`-c`) limit is now strictly guaranteed at the language level using buffered channels.
 
 - **v3.2.0 (May 27, 2026) - Massive Performance & Security Refactor**
-  1. **Fully Concurrent Architecture (`-c`, `--concurrency`)**: Replaced sequential downloading with highly optimized Goroutine worker pools. Downloading entire folders or processing standard input lists is now exponentially faster.
-  2. **Multi-Progress Bar UI (`github.com/vbauerster/mpb/v8`)**: Introduced a beautiful, real-time, synchronized terminal UI. Users can now visually track the exact transfer speed, ETA, and progress of multiple simultaneous downloads.
-  3. **Extreme CPU Optimization**: Eliminated severe performance bottlenecks by replacing repeated dynamic `json.Unmarshal` calls with strictly typed O(1) static maps for MIME/Extension lookups.
-  4. **Strict Security & Vulnerability Patches**: Enforced modern dependency resolution in `go.mod` to permanently patch Dependabot CVE alerts (including gRPC-Go authorization bypass and `x/crypto/ssh` memory panics). Upgraded CLI parser to `urfave/cli/v2`.
-  5. **Advanced API Key Tracking**: Keys are now heavily masked in terminal output (`AIza****`). Output routes strictly to `os.Stderr` to protect users' JSON pipeline automations.
-  6. **Anonymous Override Mode (`--no-apikey`, `-nk`)**: Added a flag to explicitly ignore environment variables and force unauthenticated API requests for safe testing.
+  1. **Fully Concurrent Architecture (`-c`, `--concurrency`)**: Replaced sequential downloading with highly optimized Goroutine worker pools.
+  2. **Multi-Progress Bar UI (`github.com/vbauerster/mpb/v8`)**: Introduced a beautiful, real-time, synchronized terminal UI.
+  3. **Extreme CPU Optimization**: Eliminated severe performance bottlenecks by replacing repeated dynamic `json.Unmarshal` calls with strictly typed O(1) static maps.
+  4. **Strict Security & Vulnerability Patches**: Enforced modern dependency resolution in `go.mod` to permanently patch Dependabot CVE alerts.
+  5. **Advanced API Key Tracking**: Keys are now heavily masked in terminal output (`AIza****`). Output routes strictly to `os.Stderr`.
+  6. **Anonymous Override Mode (`--no-apikey`, `-nk`)**: Added a flag to explicitly ignore environment variables and force unauthenticated API requests.
 
 - v2.0.6 (June 13, 2025)
   1. Rebuild by go1.24.4.
