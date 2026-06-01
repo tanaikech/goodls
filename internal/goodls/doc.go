@@ -15,22 +15,22 @@ We know that shared files on Google Drive can be downloaded without authorizatio
   - Beautiful Multi-Progress UI:
     A synchronized, real-time multi-bar interface displays live speeds, ETAs, and completion percentages for every active thread, gracefully handling indeterminate sizes for Google Workspace exports.
 
-  - Bulletproof Resumable Downloads:
-    Run resumable downloads for massive datasets using specific byte chunks (e.g., 100MB at a time), backed by MD5 checksum verification.
+  - Bulletproof Resumable Downloads & Proxies:
+    Run resumable downloads for massive datasets using specific byte chunks, backed by MD5 checksum verification. Full support for corporate proxy environments via standard configuration or explicit flags.
 
   - Secure Credential Management:
     Strict API key masking prevents credential leaks in CI/CD logs. Users can also enforce an explicit anonymous mode to bypass local environment variables safely.
 
-  - Native MCP Integration:
-    Fully compliant with Model Context Protocol via standard stdio JSON-RPC. Automatically manages headless conflict resolutions and execution constraints when invoked by autonomous agents.
+  - AI Agent Resilience (MCP Integration):
+    Fully compliant with Model Context Protocol via standard stdio JSON-RPC. Automatically manages headless conflict resolutions, execution constraints, explicit JSON outputs, and exponential backoff retries when invoked by autonomous agents (e.g. Claude Desktop, Cursor).
 
 ---------------------------------------------------------------
 
 # MCP (Model Context Protocol) Integration
 
-goodls natively supports MCP, allowing AI agents (e.g., Claude Desktop, Cursor) to directly invoke downloading capabilities via stdio JSON-RPC.
+goodls natively supports MCP, allowing AI agents to directly invoke downloading capabilities via stdio JSON-RPC.
 
-Configuration Example (e.g., claude_desktop_config.json or cursor settings):
+Configuration Example:
 
 	{
 	  "mcpServers": {
@@ -48,9 +48,7 @@ Sample Prompts for AI Agents:
 
   - "Download the Google Drive file at https://drive.google.com/file/d/xxxxxx/view to the ./data directory. If it already exists, please overwrite it."
 
-  - "Fetch all files from this shared folder (https://drive.google.com/drive/folders/xxxxxx) using goodls, save them to ./datasets, and skip any files we already have locally."
-
-  - "I need the dataset from https://drive.google.com/file/d/xxxxxx/view. Download it using goodls. If there's a conflict, ask me how to resolve it before proceeding."
+  - "Fetch all files from this shared folder (https://drive.google.com/drive/folders/xxxxxx) using goodls, save them to ./datasets, skip any files we already have locally, and use 3 retries in case of network issues."
 
 ---------------------------------------------------------------
 
@@ -83,6 +81,10 @@ Download a Folder with Custom Concurrency (e.g., 10 parallel downloads):
 Force Anonymous Access (Ignore environment variables):
 
 	$ goodls -u [URL of shared file] --no-apikey
+
+Download behind Corporate Proxy with Debug Logging and JSON Output:
+
+	$ goodls -u [URL] --proxy http://proxy.example.com:8080 --verbose --json
 
 Run as MCP Server:
 

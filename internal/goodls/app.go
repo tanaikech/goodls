@@ -63,6 +63,12 @@ type Para struct {
 	ConflictResolved bool
 	MCPMode          bool // True when operating inside an MCP server
 
+	Proxy      string
+	Verbose    bool
+	Retry      int
+	RetryDelay int
+	JSONOutput bool
+
 	Progress    *mpb.Progress
 	ResultJSONs *[]string
 	mu          *sync.Mutex
@@ -72,6 +78,29 @@ type Para struct {
 func (p *Para) Clone() *Para {
 	newP := *p
 	return &newP
+}
+
+// getHTTPClient : Returns a new HTTP client configured with proxy settings and cookie jar.
+func (p *Para) getHTTPClient() *http.Client {
+	jar, _ := cookiejar.New(nil)
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	}
+	if p.Proxy != "" {
+		if proxyURL, err := url.Parse(p.Proxy); err == nil {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		} else {
+			if p.Verbose {
+				p.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[Verbose] Invalid proxy URL %s: %v\n", p.Proxy, err)
+				p.mu.Unlock()
+			}
+		}
+	}
+	return &http.Client{
+		Jar:       jar,
+		Transport: transport,
+	}
 }
 
 // resolveConflict handles file existing conflicts
@@ -180,31 +209,91 @@ prompt_loop:
 	}
 }
 
-// getURLFromHTML : Get the download URL from HTML.
+// getURLFromHTML : Get the download URL from HTML robustly.
 func (p *Para) getURLFromHTML(html *http.Response) error {
 	br := html.Body
 	doc, err := goquery.NewDocumentFromReader(br)
 	if err != nil {
 		return err
 	}
-	form := doc.Find("form[id='download-form']")
-	url, b := form.Attr("action")
-	if !b {
-		return fmt.Errorf("specification of the endpoint for downloading the file might have been changed")
+
+	var urlStr string
+	var b bool
+	var form *goquery.Selection
+
+	// Strategy 1: Conventional id="download-form"
+	form = doc.Find("form[id='download-form']")
+	if form.Length() > 0 {
+		urlStr, b = form.Attr("action")
 	}
-	req, err := http.NewRequest("GET", url, nil)
+
+	// Strategy 2: Any <form> tag with action containing "confirm="
+	if !b {
+		doc.Find("form").Each(func(i int, s *goquery.Selection) {
+			if act, exists := s.Attr("action"); exists && strings.Contains(act, "confirm=") {
+				urlStr = act
+				b = true
+				form = s
+			}
+		})
+	}
+
+	// Strategy 3: Specific <a> tag link
+	if !b {
+		link := doc.Find("a[id='uc-download-link']")
+		if link.Length() > 0 {
+			if href, exists := link.Attr("href"); exists {
+				urlStr = href
+				b = true
+			}
+		}
+	}
+
+	// Strategy 4: Raw HTML regex fallback
+	if !b {
+		rawHTML, _ := doc.Html()
+		re := regexp.MustCompile(`/uc\?export=download(?:&amp;|&)confirm=[A-Za-z0-9_]+`)
+		match := re.FindString(rawHTML)
+		if match != "" {
+			urlStr = strings.ReplaceAll(match, "&amp;", "&")
+			b = true
+			if !strings.HasPrefix(urlStr, "http") {
+				urlStr = "https://drive.google.com" + urlStr
+			}
+		}
+	}
+
+	if !b {
+		if p.Verbose {
+			p.mu.Lock()
+			rawHTML, _ := doc.Html()
+			fmt.Fprintf(os.Stderr, "[Verbose] Failed to parse HTML. Raw HTML snippet length: %d\n", len(rawHTML))
+			p.mu.Unlock()
+		}
+		return fmt.Errorf("failed to extract Google Drive large-file warning download URL (specification of the endpoint might have been changed)")
+	}
+
+	if p.Verbose {
+		p.mu.Lock()
+		fmt.Fprintf(os.Stderr, "[Verbose] Extracted confirmation URL: %s\n", urlStr)
+		p.mu.Unlock()
+	}
+
+	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
 		return err
 	}
 	q := req.URL.Query()
-	form.Find("input").Each(func(i int, s *goquery.Selection) {
-		t, b := s.Attr("type")
-		if t == "hidden" && b {
-			name, _ := s.Attr("name")
-			value, _ := s.Attr("value")
-			q.Add(name, value)
-		}
-	})
+	if form != nil && form.Length() > 0 {
+		form.Find("input").Each(func(i int, s *goquery.Selection) {
+			t, bAttr := s.Attr("type")
+			if t == "hidden" && bAttr {
+				name, _ := s.Attr("name")
+				value, _ := s.Attr("value")
+				q.Add(name, value)
+			}
+		})
+	}
 	req.URL.RawQuery = q.Encode()
 	p.URLForLargeFile = req.URL.String()
 	return nil
@@ -320,7 +409,7 @@ func (p *Para) saveFile(res *http.Response) error {
 	resJSON := fmt.Sprintf("{\"Filename\": \"%s\", \"Type\": \"%s\", \"MimeType\": \"%s\", \"FileSize\": %d}", p.Filename, p.Kind, p.ContentType, fileInfo.Size())
 	p.mu.Lock()
 	*p.ResultJSONs = append(*p.ResultJSONs, resJSON)
-	if p.Disp && !p.MCPMode {
+	if p.Disp && !p.MCPMode && !p.JSONOutput {
 		fmt.Println(resJSON)
 	}
 	p.mu.Unlock()
@@ -369,17 +458,66 @@ func (p *Para) downloadLargeFile() error {
 	return p.saveFile(res)
 }
 
-// fetch : Fetch data from Google Drive
+// fetch : Fetch data from Google Drive with automatic exponential backoff retry support.
 func (p *Para) fetch(url string) (*http.Response, error) {
-	req, err := http.NewRequest("get", url, nil)
-	if err != nil {
-		return nil, err
+	var res *http.Response
+	var err error
+
+	maxRetries := p.Retry
+	if maxRetries < 0 {
+		maxRetries = 0
 	}
-	res, err := p.Client.Do(req)
-	if err != nil {
-		return nil, err
+
+	for i := 0; i <= maxRetries; i++ {
+		req, reqErr := http.NewRequest("GET", url, nil)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+
+		if p.Verbose {
+			p.mu.Lock()
+			fmt.Fprintf(os.Stderr, "[Verbose] Fetching URL: %s (Attempt %d/%d)\n", url, i+1, maxRetries+1)
+			p.mu.Unlock()
+		}
+
+		res, err = p.Client.Do(req)
+
+		if err == nil {
+			if res.StatusCode == 429 || res.StatusCode >= 500 {
+				if p.Verbose {
+					p.mu.Lock()
+					fmt.Fprintf(os.Stderr, "[Verbose] HTTP %d received for %s\n", res.StatusCode, url)
+					p.mu.Unlock()
+				}
+				res.Body.Close()
+				err = fmt.Errorf("HTTP %d", res.StatusCode)
+			} else {
+				if p.Verbose {
+					p.mu.Lock()
+					fmt.Fprintf(os.Stderr, "[Verbose] Success HTTP %d for %s\n", res.StatusCode, url)
+					p.mu.Unlock()
+				}
+				return res, nil
+			}
+		} else {
+			if p.Verbose {
+				p.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[Verbose] Error fetching %s: %v\n", url, err)
+				p.mu.Unlock()
+			}
+		}
+
+		if i < maxRetries {
+			delay := time.Duration(p.RetryDelay) * time.Second * time.Duration(1<<i)
+			if p.Verbose {
+				p.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[Verbose] Waiting %v before retry...\n", delay)
+				p.mu.Unlock()
+			}
+			time.Sleep(delay)
+		}
 	}
-	return res, nil
+	return nil, err
 }
 
 // checkURL : Parse inputted URL.
@@ -387,7 +525,22 @@ func (p *Para) checkURL(s string) error {
 	var err error
 	r := regexp.MustCompile(`google\.com\/(\w.+)\/d\/(\w.+)\/`)
 	r2 := regexp.MustCompile(`drive.google.com\/uc\?(export\=\w+|id\=([\w\S]+))&(export\=\w+|id\=([\w\S]+))`)
-	if r.MatchString(s) {
+	colabRegex := regexp.MustCompile(`colab\.research\.google\.com\/drive\/([a-zA-Z0-9-_]+)`)
+
+	if colabRegex.MatchString(s) {
+		res := colabRegex.FindStringSubmatch(s)
+		p.Kind = "file"
+		p.ID = res[1]
+		p.URL = anyurl + "&id=" + p.ID
+
+		if p.APIKey != "" && p.ShowFileInf {
+			if err := p.showFileInf(); err != nil {
+				return err
+			}
+			return nil
+		}
+		return nil
+	} else if r.MatchString(s) {
 		res := r.FindAllStringSubmatch(s, -1)
 		p.Kind = res[0][1]
 		p.ID = res[0][2]
@@ -479,11 +632,9 @@ func (p *Para) download(url string) error {
 	} else if p.APIKey != "" && p.DlFolder {
 		return nil
 	}
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return err
-	}
-	p.Client = &http.Client{Jar: jar}
+
+	p.Client = p.getHTTPClient()
+
 	res, err := p.fetch(p.URL)
 	if err != nil {
 		return err
@@ -544,8 +695,13 @@ func handler(c *cli.Context) error {
 		return fmt.Errorf("invalid conflict strategy: %s", conflict)
 	}
 
+	disp := c.Bool("NoProgress")
+	if c.Bool("json") {
+		disp = true
+	}
+
 	p := &Para{
-		Disp:              c.Bool("NoProgress"),
+		Disp:              disp,
 		DownloadBytes:     -1,
 		Ext:               c.String("extension"),
 		OverWrite:         c.Bool("overwrite"),
@@ -564,6 +720,11 @@ func handler(c *cli.Context) error {
 			return nil
 		}(c.String("mimetype")),
 		Notcreatetopdirectory: c.Bool("notcreatetopdirectory"),
+		Proxy:                 c.String("proxy"),
+		Verbose:               c.Bool("verbose"),
+		Retry:                 c.Int("retry"),
+		RetryDelay:            c.Int("retry-delay"),
+		JSONOutput:            c.Bool("json"),
 		ResultJSONs:           &[]string{},
 		mu:                    &sync.Mutex{},
 	}
@@ -604,16 +765,16 @@ func handler(c *cli.Context) error {
 		p.Progress = mpb.New(mpb.WithWidth(60))
 	}
 
-	if term.IsTerminal(int(syscall.Stdin)) {
-		if c.String("url") == "" {
-			cli.ShowAppHelp(c)
-			return nil
-		}
+	urlFlag := c.String("url")
+	if urlFlag != "" {
 		p.Filename = c.String("filename")
-		err = p.download(c.String("url"))
+		err = p.download(urlFlag)
 		if err != nil {
 			return err
 		}
+	} else if term.IsTerminal(int(syscall.Stdin)) {
+		cli.ShowAppHelp(c)
+		return nil
 	} else {
 		var urls []string
 		scanner := bufio.NewScanner(os.Stdin)
@@ -653,10 +814,13 @@ func handler(c *cli.Context) error {
 
 	if p.Progress != nil {
 		p.Progress.Wait()
-		if !p.Disp {
-			for _, jsonRes := range *p.ResultJSONs {
-				fmt.Println(jsonRes)
-			}
+	}
+
+	if p.JSONOutput && !p.MCPMode {
+		fmt.Printf("[%s]\n", strings.Join(*p.ResultJSONs, ","))
+	} else if !p.Disp && !p.MCPMode {
+		for _, jsonRes := range *p.ResultJSONs {
+			fmt.Println(jsonRes)
 		}
 	}
 
@@ -665,11 +829,18 @@ func handler(c *cli.Context) error {
 
 // createHelp : Create help document using cli v2.
 func createHelp() *cli.App {
+	// Override the default version flag alias to free up '-v' for verbose logging.
+	cli.VersionFlag = &cli.BoolFlag{
+		Name:    "version",
+		Aliases: []string{"V"},
+		Usage:   "print the version",
+	}
+
 	app := &cli.App{
 		Name:    appname,
 		Authors: []*cli.Author{{Name: "tanaike [ https://github.com/tanaikech/" + appname + " ] ", Email: "tanaike@hotmail.com"}},
 		Usage:   "Download shared files on Google Drive.",
-		Version: "3.3.1",
+		Version: "3.4.0",
 		Commands: []*cli.Command{
 			{
 				Name:  "mcp",
@@ -762,6 +933,31 @@ func createHelp() *cli.App {
 				Aliases: []string{"c"},
 				Usage:   "Number of concurrent downloads when fetching multiple files (e.g. from a folder or stdin).",
 				Value:   5,
+			},
+			&cli.StringFlag{
+				Name:    "proxy",
+				Aliases: []string{"p"},
+				Usage:   "Optional HTTP/HTTPS proxy URL.",
+			},
+			&cli.BoolFlag{
+				Name:    "verbose",
+				Aliases: []string{"v"},
+				Usage:   "Output detailed diagnostic logs to stderr.",
+			},
+			&cli.IntFlag{
+				Name:  "retry",
+				Usage: "Max retry attempts for network errors.",
+				Value: 0,
+			},
+			&cli.IntFlag{
+				Name:  "retry-delay",
+				Usage: "Base delay in seconds for exponential backoff.",
+				Value: 2,
+			},
+			&cli.BoolFlag{
+				Name:    "json",
+				Aliases: []string{"j"},
+				Usage:   "Output structured JSON results.",
 			},
 		},
 		Action: handler,

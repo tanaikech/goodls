@@ -19,27 +19,31 @@ Whether you are pulling a single shared document without authentication, perform
 
 ### 1. Frictionless Anonymous Downloads
 
-Download shared files directly via their URL **without any authorization or OAuth2 setup**. Large files (which normally require multi-step cookie/code verification in the browser) are handled automatically behind the scenes.
+Download shared files directly via their URL **without any authorization or OAuth2 setup**. Large files (which normally require multi-step cookie/code verification in the browser) are handled automatically behind the scenes using a highly resilient, multi-strategy bypass scraper.
 
-### 2. High-Speed Concurrent Folder Extraction ⚡️ _(Updated in v3.2.0+)_
+### 2. High-Speed Concurrent Folder Extraction ⚡️
 
-Download entire shared folders while perfectly preserving their internal directory structure. Powered by Go's advanced Goroutine worker pools and strictly enforced channel semaphores, `goodls` now downloads multiple files in parallel, drastically reducing extraction time without overwhelming your network. _(Note: Requires a simple API key)._
+Download entire shared folders while perfectly preserving their internal directory structure. Powered by Go's advanced Goroutine worker pools and strictly enforced channel semaphores, `goodls` downloads multiple files in parallel, drastically reducing extraction time without overwhelming your network. _(Note: Requires a simple API key)._
 
-### 3. Beautiful Multi-Progress UI 📊 _(New in v3.2.0+)_
+### 3. Beautiful Multi-Progress UI 📊
 
-Watch your data arrive in real-time. When downloading multiple files, `goodls` generates a clean, synchronized multi-bar interface directly in your terminal, showing live speeds, ETAs, and completion percentages for every active thread. Handles indeterminate file sizes (like Google Docs) with graceful spinners.
+Watch your data arrive in real-time. When downloading multiple files, `goodls` generates a clean, synchronized multi-bar interface directly in your terminal, showing live speeds, ETAs, and completion percentages for every active thread.
 
-### 4. Bulletproof Resumable Downloads
+### 4. Enterprise Proxies & Network Resilience 🛡️ _(New in v3.4.0)_
 
-Network drop? No problem. Run resumable downloads for massive files. You can specify exact byte chunks (e.g., `100m` for 100 Megabytes) to safely append data to an existing incomplete file.
+Network drop? Restrictive corporate firewall? No problem. `goodls` fully supports custom proxy configurations (`--proxy`) and automated exponential backoff retries (`--retry`) for all network requests. You can even run resumable downloads for massive files by specifying exact byte chunks (e.g., `-r 100m`) to safely append data.
 
-### 5. Secure Credential Management 🔒 _(New in v3.2.0+)_
+### 5. Secure Credential Management 🔒
 
 Strict API key masking and source tracking ensure your credentials never accidentally leak into terminal logs or CI/CD pipelines, while still giving you precise feedback on exactly which key is driving the process.
 
-### 6. Native MCP Server Integration 🤖 _(New in v3.3.1)_
+### 6. Developer Tooling & JSON Output 🛠️ _(New in v3.4.0)_
 
-Fully compliant with Model Context Protocol via standard stdio JSON-RPC. Automatically manages headless conflict resolutions, automatic directory creations, and non-blocking asynchronous execution constraints when invoked by autonomous AI agents like Claude Desktop or Cursor.
+Designed for Docker and headless CI environments. Run `goodls` non-interactively without hangs, emit structured, machine-readable JSON outputs (`--json`), and trace complex network failures using detailed diagnostic logging (`--verbose`).
+
+### 7. Native MCP Server Integration 🤖
+
+Fully compliant with Model Context Protocol via standard stdio JSON-RPC. Automatically manages headless conflict resolutions, automatic directory creations, exponential retries, and non-blocking asynchronous execution constraints when invoked by autonomous AI agents like Claude Desktop or Cursor.
 
 ---
 
@@ -53,17 +57,10 @@ The following builds are available:
 
 - `goodls_darwin_amd64` (macOS Intel 64-bit)
 - `goodls_darwin_arm64` (macOS Apple Silicon)
-- `goodls_freebsd_amd64` (FreeBSD Intel 64-bit)
-- `goodls_freebsd_arm64` (FreeBSD ARM 64-bit)
-- `goodls_linux_386` (Linux Intel 32-bit)
 - `goodls_linux_amd64` (Linux Intel 64-bit)
 - `goodls_linux_arm64` (Linux ARM 64-bit)
-- `goodls_linux_arm7` (Linux ARM 32-bit / Raspberry Pi)
-- `goodls_linux_mips` (Linux MIPS Big-Endian)
-- `goodls_linux_mipsle` (Linux MIPS Little-Endian)
-- `goodls_windows_386.exe` (Windows Intel 32-bit)
 - `goodls_windows_amd64.exe` (Windows Intel 64-bit)
-- `goodls_windows_arm64.exe` (Windows ARM 64-bit)
+- _(And many others for FreeBSD, MIPS, etc.)_
 
 ### Option B: Build from Source (For Go Developers)
 
@@ -92,11 +89,16 @@ $ goodls -u [URL of shared file on Google Drive]
 - Google Docs/Sheets/Slides: `https://docs.google.com/document/d/#####/edit?usp=sharing`
 - Standard Drive Files: `https://drive.google.com/file/d/#####/view?usp=sharing`
 - Web Content Links: `https://drive.google.com/uc?export=download&id=###`
+- **Google Colab Notebooks:** `https://colab.research.google.com/drive/#####?usp=sharing` _(New in v3.4.0)_
 
 **Common Options:**
 
-- `-e [extension]`: Convert Google Docs to specific formats. (e.g., `-e pdf` or `-e ms` to convert to Microsoft Office formats like `.docx` / `.xlsx`).
+- `-e [extension]`: Convert Google Docs to specific formats. (e.g., `-e pdf` or `-e ms`).
 - `-f [filename]`: Specify a custom name for the downloaded file.
+- `-p, --proxy [URL]`: Route traffic through an HTTP/HTTPS proxy.
+- `--retry [count]`: Retry downloads on network failures using an exponential backoff.
+- `-j, --json`: Suppress progress bars and output the final result as a structured JSON array.
+- `-v, --verbose`: Output deep diagnostic HTTP logs to stderr. _(Note: To check the app version, use `-V`)_.
 
 #### Advanced: Download from a List of URLs
 
@@ -107,6 +109,8 @@ $ cat sample.txt | goodls
 # or
 $ goodls < sample.txt
 ```
+
+_(As of v3.4.0, piping operations and direct `-u` executions behave perfectly in non-interactive CI/CD scripts without hanging)._
 
 <a name="downloadfilesfromfolder"></a>
 
@@ -130,8 +134,6 @@ $ goodls -u [Folder_URL] -key [API_Key] -c 10
 
 - `-m [mimeType]`: Filter downloads. E.g., `-m "application/pdf,image/png"` downloads _only_ PDFs and PNGs from the folder.
 - `--conflict` / `-cf`: Conflict resolution strategy when a file already exists: `prompt`, `skip`, `overwrite`, `newer`, `rename`. (Defaults to `prompt` in terminal).
-- `--overwrite` / `-o`: Legacy flag. Same as `--conflict overwrite`.
-- `--skip` / `-s`: Legacy flag. Same as `--conflict skip`.
 - `--notcreatetopdirectory` / `-ntd`: Dump the folder's contents directly into your current working directory without wrapping them in the top-level folder name.
 - `--skiperror` / `-se`: If one file fails, ignore it and continue downloading the rest of the folder.
 
@@ -141,7 +143,7 @@ $ goodls -u [Folder_URL] -key [API_Key] -c 10
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2. Create a "New Project" and open it.
-3. Open the left sidebar (hamburger menu) ➔ **APIs & Services** ➔ **Library**.
+3. Open the left sidebar ➔ **APIs & Services** ➔ **Library**.
 4. Search for **Google Drive API** and click **ENABLE**.
 5. Go back to the left sidebar ➔ **APIs & Services** ➔ **Credentials**.
 6. Click **Create Credentials** ➔ **API Key**.
@@ -149,20 +151,15 @@ $ goodls -u [Folder_URL] -key [API_Key] -c 10
 
 #### Keeping Your Key Safe (Environment Variable)
 
-Instead of pasting your key into the command line every time, save it as an environment variable. `goodls` will automatically detect it:
+Instead of pasting your key into the command line every time, save it as an environment variable:
 
 ```bash
-# Add this to your ~/.bashrc or ~/.zshrc
 export GOODLS_APIKEY="your_api_key_here"
 ```
 
 #### Anonymous Mode Override
 
-If you have `GOODLS_APIKEY` set in your environment but want to force `goodls` to run purely anonymously (ignoring the key), use the `--no-apikey` (`-nk`) flag:
-
-```bash
-$ goodls -u [URL] --no-apikey
-```
+If you have `GOODLS_APIKEY` set in your environment but want to force `goodls` to run purely anonymously (ignoring the key), use the `--no-apikey` (`-nk`) flag.
 
 <a name="resumabledownloadoffile"></a>
 
@@ -175,23 +172,19 @@ $ goodls -u [URL] -key [API_Key] -r 100m
 ```
 
 - `-r 100m`: Downloads exactly 100 Megabytes. If you run the command again, it will append the _next_ 100 Megabytes to the file automatically.
-- `-r 1g`: Downloads in 1 Gigabyte chunks.
-
-`goodls` verifies the exact byte size and MD5 checksums of your local file against Google Drive to ensure bit-perfect resume accuracy.
+  `goodls` verifies the exact byte size and MD5 checksums of your local file against Google Drive to ensure bit-perfect resume accuracy.
 
 ## 4. Conflict Resolution Strategy 🔄
 
-When a file with the same name already exists in your local target directory, `goodls` provides a highly customizable conflict resolution system. You can specify the desired behavior using the `-cf` or `--conflict` flag.
+When a file with the same name already exists in your local target directory, `goodls` provides a highly customizable conflict resolution system using the `-cf` or `--conflict` flag.
 
-### Available Strategies
-
-| Strategy               | Values      | Behavior                                                                                                                                                                                             |
-| :--------------------- | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Prompt** _(Default)_ | `prompt`    | In terminal environments, prompts you interactively to choose an action. In non-interactive environments, it gracefully falls back to `rename` to prevent hanging.                                   |
-| **Skip**               | `skip`      | Safely skips the download and reports the skipped file. (Legacy `--skip` or `-s` flags map to this).                                                                                                 |
-| **Overwrite**          | `overwrite` | Overwrites the existing local file. (Legacy `--overwrite` or `-o` flags map to this).                                                                                                                |
-| **Newer**              | `newer`     | Compares the local file's modification time with the remote file. Overwrites if the remote file is newer; otherwise, skips. If remote timestamp cannot be fetched, it safely falls back to `rename`. |
-| **Rename**             | `rename`    | Automatically appends a timestamp suffix (e.g., `_YYYYMMDD_HHMMSS`) to the filename. If that also exists, it appends a numeric counter (e.g., `_1`, `_2`).                                           |
+| Strategy               | Values      | Behavior                                                                                                                      |
+| :--------------------- | :---------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| **Prompt** _(Default)_ | `prompt`    | Interactively prompts you to choose an action. In non-interactive environments (CI/CD), it gracefully falls back to `rename`. |
+| **Skip**               | `skip`      | Safely skips the download and reports the skipped file.                                                                       |
+| **Overwrite**          | `overwrite` | Overwrites the existing local file.                                                                                           |
+| **Newer**              | `newer`     | Compares timestamps. Overwrites if the remote file is newer; otherwise, skips.                                                |
+| **Rename**             | `rename`    | Automatically appends a timestamp suffix (e.g., `_YYYYMMDD_HHMMSS`) to the filename.                                          |
 
 <a name="mcp"></a>
 
@@ -203,23 +196,24 @@ When a file with the same name already exists in your local target directory, `g
 
 **Benefits as an MCP Server:**
 
-- **Zero Authentication Friction**: Fetch public files dynamically without writing scraping scripts or handling OAuth flows inside the agent.
-- **Headless Stability**: Non-blocking asynchronous JSON-RPC routing ensures the server never times out from `ping` drops, even when downloading 10GB+ files over a slow network.
-- **Smart Conflict Resolution**: The agent can declare `skip`, `overwrite`, or `rename` logic safely, completely avoiding locked terminal prompts.
-- **Auto-Directory Generation**: Prompts the agent to pass arbitrary paths (e.g., `./datasets/2026`); `goodls` will securely and recursively construct directories on the fly.
+- **Zero Authentication Friction**: Fetch public datasets without OAuth flows inside the agent.
+- **Headless Stability**: Non-blocking asynchronous JSON-RPC routing ensures no timeouts.
+- **Agentic Resilience**: AI agents can dynamically inject `proxy` URLs and `retry` parameters to circumvent network restrictions on their own.
 
 ### Tool Overview (`download`):
 
 The server exposes the `download` tool, which takes the following parameters:
 
-- `url` (Required): Target Google Drive URL.
+- `url` (Required): Target Google Drive/Colab URL.
 - `directory` (Optional): The local target directory to save the file.
-- `conflict` (Optional): Strategy when files exist (`prompt`, `skip`, `overwrite`, `newer`, `rename`).
+- `conflict` (Optional): Strategy when files exist (`skip`, `overwrite`, `newer`, `rename`).
 - `apikey` (Optional): Required only if fetching a whole directory/folder.
+- `proxy` (Optional): HTTP/HTTPS proxy URL to route traffic.
+- `retry` (Optional): Number of automatic exponential backoff retries.
 
 ### Configuration Example
 
-To use `goodls` inside Claude Desktop or Cursor, append this to your `claude_desktop_config.json` or MCP settings:
+To use `goodls` inside Claude Desktop or Cursor, append this to your MCP settings:
 
 ```json
 {
@@ -235,15 +229,10 @@ To use `goodls` inside Claude Desktop or Cursor, append this to your `claude_des
 }
 ```
 
-_(Ensure you replace `/absolute/path/to/goodls` with the actual path to the executable)._
-
 ### Sample Prompts for AI Agents
 
-You can use natural language prompts like these to direct your AI:
-
-- _"Use the `goodls` MCP server to download the Google Drive file at `https://drive.google.com/file/d/xxxxxx/view` to the `./data` directory. If it already exists, please overwrite it."_
-- _"Fetch all files from this shared folder (`https://drive.google.com/drive/folders/xxxxxx`) using `goodls`, save them to `./datasets`, and skip any files we already have locally."_
-- _"I need the dataset from `https://drive.google.com/file/d/xxxxxx/view`. Download it using `goodls`. If there's a conflict, ask me how to resolve it before proceeding."_
+- _"Use the `goodls` MCP server to download the Google Drive file at `https://drive.google.com/file/d/xxxx/view` to the `./data` directory."_
+- _"Fetch all files from this shared folder using `goodls`, save them to `./datasets`, skip any files we already have locally, and use 3 retries in case of network issues."_
 
 ---
 
@@ -265,30 +254,29 @@ If you have any questions and commissions for me, feel free to tell me.
 
 # Update History
 
+- **v3.4.0 (June 01, 2026)**
+  1. **Enterprise Proxy & Network Resilience**: Introduced `--proxy` (`-p`), `--retry`, and `--retry-delay` with exponential backoff for flawless execution behind firewalls and unstable connections.
+  2. **Docker & CI Compatibility**: Completely resolved `syscall.Stdin` hanging issues in headless/non-interactive environments.
+  3. **Google Colab Support**: Added native parsing and transparent downloading for `colab.research.google.com/drive/` URLs.
+  4. **Indestructible Large File Scraper**: Upgraded the Google Drive warning bypass with a 4-tier fallback system (including raw HTML regex matching) to combat unannounced DOM changes.
+  5. **Developer Tooling**: Added `--json` (`-j`) for structured outputs and `--verbose` (`-v`) for deep HTTP diagnostics. _(The CLI version flag was migrated to `-V`)_.
+  6. **MCP Schema Expansion**: Autonomous AI agents can now dynamically supply proxy settings and retry counts via the `download` MCP tool.
+
 - **v3.3.1 (June 01, 2026)**
   1. **Native MCP Server Capabilities (`mcp` subcommand)**: `goodls` now functions as an autonomous tool for LLMs via the Model Context Protocol. Features seamless stdio JSON-RPC handshaking, strict prompt fallback controls, and robust capability discovery.
-  2. **Asynchronous Architecture & Ping Stabilization**: Rebuilt the MCP request loop using Goroutines and Mutex locks to support large file downloads without blocking system `ping` messages, completely fixing the `connection closed` timeout issues caused by aggressive clients.
-  3. **Intelligent Directory Creation**: MCP tool invocations targeting non-existent local paths automatically perform `os.MkdirAll` recursively to eliminate friction for AI agents.
-  4. **Shared Drives API Expansion**: Enhanced query logic natively enforces `supportsAllDrives=true`, ensuring flawless downloads from enterprise Google Workspace Shared Drives across all fetch behaviors.
+  2. **Asynchronous Architecture & Ping Stabilization**: Rebuilt the MCP request loop using Goroutines and Mutex locks to support large file downloads without blocking system `ping` messages.
+  3. **Intelligent Directory Creation**: MCP tool invocations automatically perform `os.MkdirAll` recursively to eliminate friction for AI agents.
+  4. **Shared Drives API Expansion**: Enhanced query logic natively enforces `supportsAllDrives=true`, ensuring flawless downloads from enterprise Google Workspace Shared Drives.
 
 - **v3.3.0 (May 31, 2026)**
   1. **New Conflict Resolution System (`--conflict`, `-cf`)**: Implemented a comprehensive file conflict handling engine offering five robust strategies when a file already exists locally (`prompt`, `skip`, `overwrite`, `newer`, `rename`).
-  2. **Enhanced Folder and Directory Handling**: Patched folder creation to use robust recursive directory checks and prevent filesystem write conflicts during parallel execution.
-
-- **v3.2.2 (May 27, 2026)**
-  1. **Critical Progress Bar Lifecycle Fix**: Fixed a bug where indeterminate file sizes caused the progress bar spinners to hang infinitely.
-  2. **Resource Leak Patches**: Hardened HTTP body and local file descriptor management using strictly placed `defer` statements.
-
-- **v3.2.1 (May 27, 2026)**
-  1. **Strict Channel Semaphore**: Patched an edge case where standard `errgroup` limits were bypassed. The `--concurrency` (`-c`) limit is now strictly guaranteed at the language level using buffered channels.
 
 - **v3.2.0 (May 27, 2026) - Massive Performance & Security Refactor**
   1. **Fully Concurrent Architecture (`-c`, `--concurrency`)**: Replaced sequential downloading with highly optimized Goroutine worker pools.
   2. **Multi-Progress Bar UI (`github.com/vbauerster/mpb/v8`)**: Introduced a beautiful, real-time, synchronized terminal UI.
   3. **Extreme CPU Optimization**: Eliminated severe performance bottlenecks by replacing repeated dynamic `json.Unmarshal` calls with strictly typed O(1) static maps.
   4. **Strict Security & Vulnerability Patches**: Enforced modern dependency resolution in `go.mod` to permanently patch Dependabot CVE alerts.
-  5. **Advanced API Key Tracking**: Keys are now heavily masked in terminal output (`AIza****`). Output routes strictly to `os.Stderr`.
-  6. **Anonymous Override Mode (`--no-apikey`, `-nk`)**: Added a flag to explicitly ignore environment variables and force unauthenticated API requests.
+  5. **Anonymous Override Mode (`--no-apikey`, `-nk`)**: Added a flag to explicitly ignore environment variables and force unauthenticated API requests.
 
 - v2.0.6 (June 13, 2025)
   1. Rebuild by go1.24.4.

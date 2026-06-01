@@ -43,7 +43,7 @@ func (p *Para) getFileInfFromP() (*drive.File, error) {
 	v := &valResumableDownload{
 		Para: *p,
 	}
-	v.Client = &http.Client{}
+	v.Client = p.getHTTPClient()
 	if err := v.getFileInf(); err != nil {
 		return nil, err
 	}
@@ -127,30 +127,76 @@ func (v *valResumableDownload) resDownloadFileByAPIKey() (*http.Response, error)
 		}
 		return 0
 	}(v.DownloadFile.Size)
+
+	v.Client = v.Para.getHTTPClient()
 	v.Client.Timeout = time.Duration(timeOut) * time.Second
-	req, err := http.NewRequest("get", u.String(), nil)
-	if err != nil {
-		return nil, err
+
+	var res *http.Response
+	maxRetries := v.Retry
+	if maxRetries < 0 {
+		maxRetries = 0
 	}
-	req.Header.Set("Range", v.Range)
-	res, err := v.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode != 206 && res.StatusCode != 200 {
-		r, err := io.ReadAll(res.Body)
-		if err != nil {
-			return nil, err
+
+	for i := 0; i <= maxRetries; i++ {
+		req, reqErr := http.NewRequest("GET", u.String(), nil)
+		if reqErr != nil {
+			return nil, reqErr
 		}
-		defer res.Body.Close()
-		return nil, fmt.Errorf("%s", r)
+		req.Header.Set("Range", v.Range)
+
+		if v.Verbose {
+			v.mu.Lock()
+			fmt.Fprintf(os.Stderr, "[Verbose] Resumable fetching URL: %s (Attempt %d/%d)\n", u.String(), i+1, maxRetries+1)
+			v.mu.Unlock()
+		}
+
+		res, err = v.Client.Do(req)
+
+		if err == nil {
+			if res.StatusCode == 429 || res.StatusCode >= 500 {
+				if v.Verbose {
+					v.mu.Lock()
+					fmt.Fprintf(os.Stderr, "[Verbose] HTTP %d received for %s\n", res.StatusCode, u.String())
+					v.mu.Unlock()
+				}
+				res.Body.Close()
+				err = fmt.Errorf("HTTP %d", res.StatusCode)
+			} else if res.StatusCode != 206 && res.StatusCode != 200 {
+				r, _ := io.ReadAll(res.Body)
+				res.Body.Close()
+				return nil, fmt.Errorf("%s", r)
+			} else {
+				return res, nil
+			}
+		} else {
+			if v.Verbose {
+				v.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[Verbose] Error resumable fetching %s: %v\n", u.String(), err)
+				v.mu.Unlock()
+			}
+		}
+
+		if i < maxRetries {
+			delay := time.Duration(v.RetryDelay) * time.Second * time.Duration(1<<i)
+			if v.Verbose {
+				v.mu.Lock()
+				fmt.Fprintf(os.Stderr, "[Verbose] Waiting %v before retry...\n", delay)
+				v.mu.Unlock()
+			}
+			time.Sleep(delay)
+		}
 	}
-	return res, nil
+
+	return nil, fmt.Errorf("failed resumable fetch after %d retries: %v", maxRetries, err)
 }
 
 // getFileInf : Retrieve file infomation using Drive API.
 func (v *valResumableDownload) getFileInf() error {
-	srv, err := drive.NewService(context.Background(), option.WithAPIKey(v.Para.APIKey))
+	opts := []option.ClientOption{option.WithAPIKey(v.Para.APIKey)}
+	if v.Para.Proxy != "" {
+		opts = append(opts, option.WithHTTPClient(v.Para.getHTTPClient()))
+	}
+	srv, err := drive.NewService(context.Background(), opts...)
 	if err != nil {
 		return err
 	}

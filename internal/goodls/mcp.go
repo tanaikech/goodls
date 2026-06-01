@@ -69,7 +69,7 @@ func handleMCPRequest(out *os.File, req MCPRequest) {
 			},
 			"serverInfo": map[string]any{
 				"name":    "goodls",
-				"version": "3.3.1",
+				"version": "3.4.0",
 			},
 		})
 	case "ping":
@@ -87,10 +87,13 @@ func handleMCPRequest(out *os.File, req MCPRequest) {
 					"inputSchema": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"url":       map[string]any{"type": "string", "description": "Google Drive URL (file or folder)"},
-							"conflict":  map[string]any{"type": "string", "description": "Conflict resolution strategy: 'skip', 'overwrite', 'newer', 'rename'."},
-							"directory": map[string]any{"type": "string", "description": "Target local directory to save the downloaded files."},
-							"apikey":    map[string]any{"type": "string", "description": "Optional API key for downloading folders."},
+							"url":        map[string]any{"type": "string", "description": "Google Drive URL (file or folder)"},
+							"conflict":   map[string]any{"type": "string", "description": "Conflict resolution strategy: 'skip', 'overwrite', 'newer', 'rename'."},
+							"directory":  map[string]any{"type": "string", "description": "Target local directory to save the downloaded files."},
+							"apikey":     map[string]any{"type": "string", "description": "Optional API key for downloading folders."},
+							"proxy":      map[string]any{"type": "string", "description": "Optional HTTP/HTTPS proxy URL."},
+							"retry":      map[string]any{"type": "integer", "description": "Optional max retry attempts for downloads."},
+							"retryDelay": map[string]any{"type": "integer", "description": "Optional retry delay in seconds for exponential backoff."},
 						},
 						"required": []string{"url"},
 					},
@@ -107,10 +110,13 @@ func handleMCPRequest(out *os.File, req MCPRequest) {
 		var params struct {
 			Name      string `json:"name"`
 			Arguments struct {
-				URL       string `json:"url"`
-				Conflict  string `json:"conflict"`
-				Directory string `json:"directory"`
-				APIKey    string `json:"apikey"`
+				URL        string `json:"url"`
+				Conflict   string `json:"conflict"`
+				Directory  string `json:"directory"`
+				APIKey     string `json:"apikey"`
+				Proxy      string `json:"proxy"`
+				Retry      int    `json:"retry"`
+				RetryDelay int    `json:"retryDelay"`
 			} `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -123,14 +129,19 @@ func handleMCPRequest(out *os.File, req MCPRequest) {
 			return
 		}
 
-		executeToolDownload(out, req.ID, params.Arguments.URL, params.Arguments.Conflict, params.Arguments.Directory, params.Arguments.APIKey)
+		retryDelay := params.Arguments.RetryDelay
+		if retryDelay <= 0 {
+			retryDelay = 2
+		}
+
+		executeToolDownload(out, req.ID, params.Arguments.URL, params.Arguments.Conflict, params.Arguments.Directory, params.Arguments.APIKey, params.Arguments.Proxy, params.Arguments.Retry, retryDelay)
 
 	default:
 		sendError(out, req.ID, -32601, "Method not found", fmt.Sprintf("Unsupported method: %s", req.Method))
 	}
 }
 
-func executeToolDownload(out *os.File, reqID any, url, conflict, directory, apiKey string) {
+func executeToolDownload(out *os.File, reqID any, url, conflict, directory, apiKey, proxy string, retry, retryDelay int) {
 	if directory == "" {
 		directory, _ = filepath.Abs(".")
 	} else {
@@ -168,6 +179,9 @@ func executeToolDownload(out *os.File, reqID any, url, conflict, directory, apiK
 		Concurrency:      5,
 		ConflictStrategy: conflict,
 		APIKey:           apiKeyToUse,
+		Proxy:            proxy,
+		Retry:            retry,
+		RetryDelay:       retryDelay,
 		ResultJSONs:      &[]string{},
 		mu:               &sync.Mutex{},
 	}

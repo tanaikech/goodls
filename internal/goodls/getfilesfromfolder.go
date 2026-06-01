@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -61,9 +60,8 @@ func (p *Para) downloadFileByAPIKey(file *drive.File) error {
 		}
 		return 0
 	}(file.Size)
-	p.Client = &http.Client{
-		Timeout: time.Duration(timeOut) * time.Second,
-	}
+	p.Client = p.getHTTPClient()
+	p.Client.Timeout = time.Duration(timeOut) * time.Second
 
 	res, err := p.fetch(u.String())
 	if err != nil {
@@ -282,7 +280,11 @@ func (p *Para) dupChkFoldersFiles(fileList *getfilelist.FileListDl) {
 
 // getFilesFromFolder: This method is the main method for downloading all files in a shared folder.
 func (p *Para) getFilesFromFolder() error {
-	srv, err := drive.NewService(context.Background(), option.WithAPIKey(p.APIKey))
+	opts := []option.ClientOption{option.WithAPIKey(p.APIKey)}
+	if p.Proxy != "" {
+		opts = append(opts, option.WithHTTPClient(p.getHTTPClient()))
+	}
+	srv, err := drive.NewService(context.Background(), opts...)
 	if err != nil {
 		return err
 	}
